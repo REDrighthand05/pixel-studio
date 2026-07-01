@@ -505,10 +505,10 @@ function peRenderLayerPanel() {
     info.append(name, opRow);
     // Buttons
     const btns = document.createElement('div'); btns.className = 'pe-layer-btns';
-    const visBtn = document.createElement('button'); visBtn.textContent = l.visible ? '馃憗' : '鈼?;
+    const visBtn = document.createElement('button'); visBtn.textContent = l.visible ? '\u25CF' : '鈼?;
     visBtn.className = l.visible ? 'on' : ''; visBtn.title = 'Toggle visibility';
     visBtn.addEventListener('click', e => { e.stopPropagation(); peLayers[i].visible = !peLayers[i].visible; peRender(); peRenderLayerPanel(); });
-    const lockBtn = document.createElement('button'); lockBtn.textContent = l.locked ? '馃敀' : '鈼?;
+    const lockBtn = document.createElement('button'); lockBtn.textContent = l.locked ? '\u29BF' : '鈼?;
     lockBtn.className = l.locked ? 'on' : ''; lockBtn.title = 'Toggle lock';
     lockBtn.addEventListener('click', e => { e.stopPropagation(); peLayers[i].locked = !peLayers[i].locked; peRenderLayerPanel(); });
     btns.append(visBtn, lockBtn);
