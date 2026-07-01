@@ -62,6 +62,10 @@ cd pixel-studio
 | Delete | Delete selection | Esc | Deselect / Close |
 | Space+Drag | Pan canvas | Scroll | Zoom in/out |
 
+
+## Verification
+
+This project is designed for **non-visual verification** — every feature can be tested through the browser console without inspecting the canvas visually. See [TESTING.md](./TESTING.md) for the complete verification guide, debug API reference, and automated assertion templates.
 ## Tech Stack
 
 | Layer | Technology |
@@ -95,3 +99,4 @@ MIT License
 ---
 
 <p align="center"><em>Built with Codex, one pixel at a time.</em></p>
+

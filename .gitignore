@@ -1,0 +1,14 @@
+﻿# Temp scripts
+_write.*
+*.ps1
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
