@@ -1,4 +1,4 @@
-﻿// === Shared App State ===
+// === Shared App State ===
 const AppState = {
   currentColor: '#4fc3f7', sharedPalette: null, activeView: 'pixel'
 };
@@ -428,6 +428,9 @@ document.addEventListener('keydown',e=>{
   if(e.ctrlKey&&e.key==='z'&&!e.shiftKey){e.preventDefault();peUndo();}
   if(e.ctrlKey&&(e.key==='Z'||(e.key==='z'&&e.shiftKey))){e.preventDefault();peRedo();}
   if(e.ctrlKey&&e.key==='e'){e.preventDefault();document.getElementById('peExport')?.click();}
+  if(e.ctrlKey&&e.key==='n'){e.preventDefault();peNewProject();}
+  if(e.ctrlKey&&e.key==='o'){e.preventDefault();document.getElementById('peOpen')?.click();}
+  if(e.ctrlKey&&e.key==='s'){e.preventDefault();peSaveProject();}
   if(e.ctrlKey&&e.key==='a'){e.preventDefault();peSelectAll();}
   if(e.key==='Delete'||e.key==='Del'){peDeleteSelection();}
   if(e.key==='Escape'){peHideSelection();document.getElementById('helpOverlay').classList.remove('show');document.getElementById('resizeDialog').classList.remove('show');document.getElementById('exportDialog').classList.remove('show');document.getElementById('contextMenu').classList.remove('show');}
@@ -548,6 +551,12 @@ document.getElementById('layerMerge')?.addEventListener('click', () => {
   peLayers.splice(peActiveLayer, 1); peActiveLayer--;
   peRender(); peSaveState(); peRenderLayerPanel(); showToast('Merged down');
 });
+// === Project File Events ===
+document.getElementById('peNew')?.addEventListener('click',peNewProject);
+document.getElementById('peOpen')?.addEventListener('click',function(){document.getElementById('peFileInput')?.click();});
+document.getElementById('peFileInput')?.addEventListener('change',function(){if(this.files[0])peOpenProject(this.files[0]);this.value='';});
+document.getElementById('peSave')?.addEventListener('click',peSaveProject);
+
 // === Animation Timeline Events ===
 document.getElementById('tlPlay')?.addEventListener('click',peTogglePlay);
 document.getElementById('tlStop')?.addEventListener('click',peStopAnim);
@@ -599,6 +608,68 @@ function peRenderOnion(ctx){
   if(peCurrentFrame<peFrames.length-1&&peOnionNextAlpha>0){var nextComp=getFrameComposite(peFrames[peCurrentFrame+1]);for(var y=0;y<peGridSize;y++)for(var x=0;x<peGridSize;x++){var c=nextComp[y][x];if(c&&c!=='#ffffff00'){var rgb=hexToRgb(c);ctx.globalAlpha=peOnionNextAlpha;ctx.fillStyle=rgbToHex(Math.round(rgb[0]*0.6),Math.min(255,rgb[1]+60),Math.round(rgb[2]*0.6));ctx.fillRect(x*pePixelSize,y*pePixelSize,pePixelSize,pePixelSize);}}}
   ctx.globalAlpha=1;
 }
+// === PROJECT FILE SYSTEM (.pxs) ===
+function peSerializeProject(n){
+  return JSON.stringify({
+    version:'1.0',name:n||'Untitled',canvas:{width:peGridSize,height:peGridSize},
+    frames:peFrames.map(function(f){
+      return{name:f.name,delay:f.delay,layers:f.layers.map(function(l){
+        return{name:l.name,visible:l.visible,locked:l.locked,opacity:l.opacity,blendMode:l.blendMode,data:l.data};
+      })};
+    }),
+    created:localStorage.getItem('pxs_created')||new Date().toISOString(),
+    modified:new Date().toISOString()
+  },null,0);
+}
+function peDeserializeProject(j){
+  try{
+    var d=JSON.parse(j);if(!d.frames||!d.frames.length)return showToast('Invalid .pxs'),false;
+    peGridSize=d.canvas.width||d.canvas.height||16;
+    peFrames=d.frames.map(function(f){return{
+      name:f.name||'Frame',delay:f.delay||100,
+      layers:f.layers.map(function(l){return{
+        name:l.name||'Layer',visible:l.visible!==false,locked:l.locked===true,
+        opacity:l.opacity||1,blendMode:l.blendMode||'normal',
+        data:l.data||Array(peGridSize).fill().map(function(){return Array(peGridSize).fill('#ffffff00');})
+      };})};});
+    peCurrentFrame=0;peLayers=peFrames[0].layers.map(function(l){return JSON.parse(JSON.stringify(l));});
+    var gs=document.getElementById('peGridSize');if(gs){gs.value=peGridSize;gs.max=256;}
+    document.getElementById('peGridSizeVal').textContent=peGridSize;
+    peCanvas.width=peGridSize*pePixelSize;peCanvas.height=peGridSize*pePixelSize;
+    localStorage.setItem('pxs_created',d.created||new Date().toISOString());
+    peHideSelection();peRender();peRenderLayerPanel();peRenderTimeline();peUpdateStatusBar();peSaveState();
+    showToast('Loaded: '+(d.name||'project')+' ('+peFrames.length+' frames, '+peLayers.length+' layers)');
+    return true;
+  }catch(e){return showToast('Failed to load .pxs'),false;}
+}
+function peSaveProject(){
+  peFrames[peCurrentFrame].layers=deepCloneLayers(peLayers);
+  var json=peSerializeProject(),blob=new Blob([json],{type:'application/json'}),url=URL.createObjectURL(blob);
+  var a=document.createElement('a');a.download='project.pxs';a.href=url;a.click();URL.revokeObjectURL(url);
+  localStorage.setItem('pxs_autosave',json);localStorage.setItem('pxs_autosave_time',Date.now().toString());
+  showToast('Saved '+(blob.size/1024).toFixed(1)+'KB');
+}
+function peOpenProject(f){
+  var r=new FileReader();r.onload=function(e){
+    if(peDeserializeProject(e.target.result)){localStorage.setItem('pxs_autosave',e.target.result);localStorage.setItem('pxs_autosave_time',Date.now().toString());}
+  };r.readAsText(f);
+}
+function peNewProject(){if(!confirm('New project? Unsaved changes lost.'))return;localStorage.removeItem('pxs_autosave');localStorage.removeItem('pxs_autosave_time');location.reload();}
+function peInitAutoSave(){setInterval(function(){
+  peFrames[peCurrentFrame].layers=deepCloneLayers(peLayers);
+  var json=peSerializeProject();localStorage.setItem('pxs_autosave',json);localStorage.setItem('pxs_autosave_time',Date.now().toString());
+},30000);}
+function peCheckRecovery(){
+  try{
+    var saved=localStorage.getItem('pxs_autosave'),savedTime=parseInt(localStorage.getItem('pxs_autosave_time'))||0;
+    if(saved&&(Date.now()-savedTime)<86400000){
+      if(confirm('Restore unsaved project from '+new Date(savedTime).toLocaleString()+'?'))return peDeserializeProject(saved),true;
+      else localStorage.removeItem('pxs_autosave'),localStorage.removeItem('pxs_autosave_time');
+    }
+  }catch(e){}
+  return false;
+}
+
 // === PALETTE GENERATOR ===
 function hexToHSL(hex){hex=hex.replace('#','');const r=parseInt(hex.slice(0,2),16)/255,g=parseInt(hex.slice(2,4),16)/255,b=parseInt(hex.slice(4,6),16)/255;const mx=Math.max(r,g,b),mn=Math.min(r,g,b);let h=0,s=0,l=(mx+mn)/2;if(mx!==mn){const d=mx-mn;s=l>0.5?d/(2-mx-mn):d/(mx+mn);if(mx===r)h=((g-b)/d+(g<b?6:0))/6;else if(mx===g)h=((b-r)/d+2)/6;else h=((r-g)/d+4)/6;}return{h:h*360,s:s*100,l:l*100};}
 function hslToHex(h,s,l){h/=360;s/=100;l/=100;if(s===0){const n=Math.round(l*255).toString(16).padStart(2,'0');return'#'+n+n+n}const hue2=(p,q,t)=>{if(t<0)t+=1;if(t>1)t-=1;if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p};const q=l<0.5?l*(1+s):l+s-l*s,p=2*l-q;const r=hue2(p,q,h+1/3),g=hue2(p,q,h),b=hue2(p,q,h-1/3);return'#'+[r,g,b].map(x=>Math.round(x*255).toString(16).padStart(2,'0')).join('');}
@@ -706,6 +777,7 @@ peInit();peBuildPalette();peSelectColor('#4fc3f7');
 document.getElementById('peGrid')?.classList.add('active');peUpdateBtn();
 document.getElementById('pvColorPreview').style.background='#4fc3f7';
 pvRender('#4fc3f7');
+peInitAutoSave();
 
 window.__debug={
   getData:()=>peLayers[peActiveLayer]?.data,
@@ -719,7 +791,7 @@ window.__debug={
   getCanvasSize:()=>({w:peGridSize,h:peGridSize,zoom:pePixelSize}),
   getTool:()=>peTool,
   getBrushSize:()=>peBrushSize,
-  getFrames:()=>peFrames.map(function(f){return{name:f.name,delay:f.delay,layers:f.layers.length};}),getCurrentFrame:()=>peCurrentFrame,getFrameCount:()=>peFrames.length,isAnimPlaying:()=>peAnimPlaying,getOnion:()=>({enabled:peOnionEnabled,prevAlpha:peOnionPrevAlpha,nextAlpha:peOnionNextAlpha}),selectFrame:(i)=>peSelectFrame(i),addFrame:peAddFrame,deleteFrame:(i)=>peDeleteFrame(i),playAnim:pePlayAnim,stopAnim:peStopAnim,exportGIF:peExportGIF,exportSheet:peExportSpriteSheet,
+  getFrames:()=>peFrames.map(function(f){return{name:f.name,delay:f.delay,layers:f.layers.length};}),getCurrentFrame:()=>peCurrentFrame,getFrameCount:()=>peFrames.length,isAnimPlaying:()=>peAnimPlaying,getOnion:()=>({enabled:peOnionEnabled,prevAlpha:peOnionPrevAlpha,nextAlpha:peOnionNextAlpha}),selectFrame:(i)=>peSelectFrame(i),addFrame:peAddFrame,deleteFrame:(i)=>peDeleteFrame(i),playAnim:pePlayAnim,stopAnim:peStopAnim,exportGIF:peExportGIF,exportSheet:peExportSpriteSheet,saveProject:peSaveProject,openProject:peOpenProject,newProject:peNewProject,
   getSpray:()=>({density:peSprayDensity,radius:peSprayRadius}),
   getBlendModes:()=>BLEND_MODES,
   setActiveLayer:(i)=>{if(i>=0&&i<peLayers.length){peActiveLayer=i;peRenderLayerPanel();}}
