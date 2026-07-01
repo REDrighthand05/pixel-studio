@@ -90,6 +90,27 @@ body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,sans-
 .pe-spray-row .val{font-size:10px;color:#ccc;min-width:18px;text-align:right}
 .pe-info{font-size:10px;color:#556;margin-top:auto;padding-top:6px;border-top:1px solid var(--border)}
 .pe-info span{color:var(--fg2)}
+.pe-timeline{background:var(--bg2);border-top:1px solid var(--border);padding:6px 12px;flex-shrink:0;font-size:11px;display:flex;flex-direction:column;gap:4px}
+.pe-tl-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pe-tl-controls{display:flex;align-items:center;gap:4px}
+.pe-tl-controls button{width:28px;height:26px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:3px;background:transparent;color:var(--fg2);cursor:pointer;font-size:14px;transition:all .1s;padding:0}
+.pe-tl-controls button:hover{background:var(--accent);color:#111;border-color:var(--accent)}
+.pe-tl-controls button.active{background:var(--accent);color:#111}
+.pe-tl-controls select{padding:2px 4px;font-size:10px;background:#222;border:1px solid #333;color:var(--fg2);border-radius:3px;outline:none;cursor:pointer}
+.pe-tl-controls input[type=number]{padding:2px 4px;font-size:10px;background:#222;border:1px solid #333;color:var(--fg2);border-radius:3px;outline:none;width:36px}
+.pe-tl-actions{margin-left:auto;display:flex;align-items:center;gap:4px}
+.pe-tl-actions button{width:24px;height:24px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:3px;background:transparent;color:var(--fg2);cursor:pointer;font-size:13px;transition:all .1s;padding:0}
+.pe-tl-actions button:hover{background:var(--accent);color:#111}
+.pe-tl-actions .tl-count{font-size:10px;color:var(--fg3);margin-right:4px}
+.pe-tl-frames{display:flex;gap:4px;overflow-x:auto;padding:2px 0;min-height:60px}
+.pe-tl-frame{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;padding:2px;border:2px solid transparent;border-radius:4px;transition:all .1s;flex-shrink:0}
+.pe-tl-frame:hover{border-color:var(--border)}
+.pe-tl-frame.active{border-color:var(--accent);background:rgba(79,195,247,.08)}
+.pe-tl-frame canvas{width:48px;height:48px;border:1px solid #333;border-radius:2px;image-rendering:pixelated}
+.pe-tl-frame .fl{font-size:9px;color:var(--fg3);font-family:monospace}
+.pe-tl-onion{display:flex;align-items:center;gap:8px;font-size:10px;color:var(--fg3);flex-wrap:wrap}
+.pe-tl-onion label{display:flex;align-items:center;gap:4px;cursor:pointer}
+.pe-tl-onion input[type=range]{accent-color:var(--accent);height:3px;width:50px}
 .pe-statusbar{display:flex;align-items:center;gap:12px;padding:4px 12px;background:var(--bg2);border-top:1px solid var(--border);flex-shrink:0;font-size:11px;color:var(--fg3);font-family:monospace}
 .pe-statusbar .sep{color:var(--border)}
 .pe-statusbar .st-right{margin-left:auto;display:flex;gap:12px}
@@ -302,6 +323,37 @@ body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,sans-
       <div class="pe-info"><span id="peCursor">Click to paint - Drag to draw</span></div>
     </div>
   </div>
+  </div>
+
+  <!-- Animation Timeline -->
+  <div class="pe-timeline" id="peTimeline">
+    <div class="pe-tl-top">
+      <div class="pe-tl-controls">
+        <button id="tlPlay" title="Play (Space)">&#9654;</button>
+        <button id="tlStop" title="Stop">&#9632;</button>
+        <span style="font-size:10px;color:var(--fg3)">
+          Loop: <select id="tlLoop"><option value="forward">Forward</option><option value="pingpong">Ping-pong</option></select>
+          FPS: <input type="number" id="tlFps" value="10" min="1" max="60">
+        </span>
+      </div>
+      <div class="pe-tl-actions">
+        <span class="tl-count" id="tlFrameCount">1 frame</span>
+        <button id="tlAdd" title="Add Frame">+</button>
+        <button id="tlDel" title="Delete Frame">-</button>
+        <button id="tlDup" title="Duplicate">&#x29C9;</button>
+        <button id="tlGif" title="Export GIF">GIF</button>
+        <button id="tlSheet" title="Export Sprite Sheet">Sheet</button>
+      </div>
+    </div>
+    <div class="pe-tl-frames" id="tlFrames"></div>
+    <div class="pe-tl-onion">
+      <label><input type="checkbox" id="onionToggle"> Onion Skin</label>
+      <label>Prev: <input type="range" id="onionPrev" min="0" max="100" value="50"></label>
+      <label>Next: <input type="range" id="onionNext" min="0" max="100" value="25"></label>
+    </div>
+  </div>
+
+  <div class="pe-statusbar">
   <div class="pe-statusbar">
     <span id="sbTool">Pencil</span><span class="sep">|</span>
     <span id="sbPos">0, 0</span><span class="sep">|</span>
@@ -405,5 +457,6 @@ body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,sans-
 </div>
 <div class="toast-container" id="toastContainer"></div>
 </body>
-<script src="app.js"></script></html>
+<script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>`r`n<script src="app.js"></script></html>
+
 
