@@ -650,7 +650,53 @@ document.getElementById('pluginBtn')?.addEventListener('click', function() {
         }
     }
     document.getElementById('pluginManager').classList.add('show');
-});// === PROJECT FILE SYSTEM (.pxs) ===
+});// === HSL Adjustment ===
+function peAdjustHSL(hueShift, satMul, lightShift) {
+  var data = peLayers[peActiveLayer]?.data;
+  if (!data) return;
+  for (var y = 0; y < peGridSize; y++) {
+    for (var x = 0; x < peGridSize; x++) {
+      var p = data[y][x];
+      if (!p || p === '#ffffff00') continue;
+      var hsl = hexToHSL(p);
+      var h = ((hsl.h + hueShift) % 360 + 360) % 360;
+      var s = Math.max(0, Math.min(100, hsl.s * satMul / 100));
+      var l = Math.max(0, Math.min(100, hsl.l + lightShift));
+      data[y][x] = hslToHex(h, s, l);
+    }
+  }
+  peRender();
+  peSaveState();
+}
+
+// HSL events
+document.getElementById('hslHue')?.addEventListener('input', function() {
+  document.getElementById('hslHueVal').textContent = this.value;
+});
+document.getElementById('hslSat')?.addEventListener('input', function() {
+  document.getElementById('hslSatVal').textContent = this.value + '%';
+});
+document.getElementById('hslLight')?.addEventListener('input', function() {
+  document.getElementById('hslLightVal').textContent = this.value;
+});
+document.getElementById('hslApply')?.addEventListener('click', function() {
+  var hue = parseInt(document.getElementById('hslHue').value);
+  var sat = parseInt(document.getElementById('hslSat').value);
+  var light = parseInt(document.getElementById('hslLight').value);
+  peAdjustHSL(hue, sat, light);
+  document.getElementById('hslDialog').classList.remove('show');
+  showToast('HSL adjusted: H' + hue + ' S' + sat + '% L' + (light > 0 ? '+' : '') + light);
+});
+document.getElementById('peHslBtn')?.addEventListener('click', function() {
+  document.getElementById('hslHue').value = 0;
+  document.getElementById('hslSat').value = 100;
+  document.getElementById('hslLight').value = 0;
+  document.getElementById('hslHueVal').textContent = '0';
+  document.getElementById('hslSatVal').textContent = '100%';
+  document.getElementById('hslLightVal').textContent = '0';
+  document.getElementById('hslDialog').classList.add('show');
+});
+// === PROJECT FILE SYSTEM (.pxs) ===
 function peSerializeProject(n){
   return JSON.stringify({
     version:'1.0',name:n||'Untitled',canvas:{width:peGridSize,height:peGridSize},
@@ -840,6 +886,7 @@ window.__debug={
   setActiveLayer:(i)=>{if(i>=0&&i<peLayers.length){peActiveLayer=i;peRenderLayerPanel();}}
 };
 console.log('Pixel Studio v0.7.0 loaded. Layers enabled. Use window.__debug for verification.');
+
 
 
 
