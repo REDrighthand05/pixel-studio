@@ -1,4 +1,4 @@
-﻿// === Shared App State ===
+// === Shared App State ===
 const AppState = {
   currentColor: '#4fc3f7', sharedPalette: null, activeView: 'pixel'
 };
