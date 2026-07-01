@@ -7,6 +7,16 @@
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#1a1a2e">
 <meta name="description" content="Pixel Studio - Pixel Art Editor + Palette Generator">
+<meta property="og:title" content="Pixel Studio">
+<meta property="og:description" content="Free pixel art editor with layers, animation, and palette generator">
+<meta property="og:image" content="https://redrighthand05.github.io/pixel-studio/icon.svg">
+<meta property="og:url" content="https://redrighthand05.github.io/pixel-studio/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Pixel Studio">
+<meta name="twitter:description" content="Free pixel art editor">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"WebApplication","name":"Pixel Studio","url":"https://redrighthand05.github.io/pixel-studio/","applicationCategory":"Multimedia"}
+</script>
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="apple-touch-icon" href="icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -512,7 +522,11 @@ body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,sans-
 <div class="toast-container" id="toastContainer"></div>
 <input type="file" id="peFileInput" accept=".pxs" style="display:none">
 </body>
+<script src="plugin-loader.js"></script>
+<script src="plugins/dither-filters.js"></script>
+<script src="plugins/palette-exchange.js"></script>
 <script src="app.js"></script><script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js" defer></script></html>
+
 
 
 
