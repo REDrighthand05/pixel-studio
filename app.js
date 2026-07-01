@@ -1,4 +1,4 @@
-// === Shared App State ===
+﻿// === Shared App State ===
 const AppState = {
   currentColor: '#4fc3f7', sharedPalette: null, activeView: 'pixel'
 };
@@ -319,6 +319,7 @@ function peSetZoom(nz){
   peCanvas.width=peGridSize*pePixelSize;peCanvas.height=peGridSize*pePixelSize;peRender();peUpdateStatusBar();
 }
 peCanvas.addEventListener('mousedown', e => {
+  if (window.__pluginTools && peTool && peTool.startsWith('plugin_')) { var t = window.__pluginTools[window.__activePluginToolId]; if (t && t.onPointerDown) { var p = peGetPixel(e.clientX, e.clientY); if (p) t.onPointerDown(p.x, p.y); } return; }
   if (peTool === 'select') {
     const pos = peGetPixel(e.clientX, e.clientY); if (!pos) return;
     if (peSelection && pos.x>=peSelection.x && pos.x<peSelection.x+peSelection.w && pos.y>=peSelection.y && pos.y<peSelection.y+peSelection.h) {
@@ -341,6 +342,7 @@ peCanvas.addEventListener('mousedown', e => {
 });
 
 peCanvas.addEventListener('mousemove', e => {
+  if (window.__pluginTools && peTool && peTool.startsWith('plugin_')) { var t = window.__pluginTools[window.__activePluginToolId]; if (t && t.onPointerMove) { var p = peGetPixel(e.clientX, e.clientY); if (p) t.onPointerMove(p.x, p.y); } return; }
   const pos = peGetPixel(e.clientX, e.clientY);
   const cursorEl = document.getElementById('peCursor');
   const sbPos = document.getElementById('sbPos');
@@ -357,6 +359,7 @@ peCanvas.addEventListener('mousemove', e => {
 });
 
 document.addEventListener('mouseup', () => {
+  if (window.__pluginTools && peTool && peTool.startsWith('plugin_')) { var t = window.__pluginTools[window.__activePluginToolId]; if (t && t.onPointerUp) t.onPointerUp(); return; }
   if (pePanning) { pePanning=false; document.body.style.cursor=''; return; }
   if (peDrawing && peTool==='select'){peDrawing=false;if(pePrevData){peSaveState();pePrevData=null;peRenderLayerPanel();} return;}
   if (peSelecting && peTool==='select'){peSelecting=false;if(peSelection&&(peSelection.w<1||peSelection.h<1))peHideSelection();return;}
@@ -629,7 +632,25 @@ function peRenderOnion(ctx){
   if(peCurrentFrame<peFrames.length-1&&peOnionNextAlpha>0){var nextComp=getFrameComposite(peFrames[peCurrentFrame+1]);for(var y=0;y<peGridSize;y++)for(var x=0;x<peGridSize;x++){var c=nextComp[y][x];if(c&&c!=='#ffffff00'){var rgb=hexToRgb(c);ctx.globalAlpha=peOnionNextAlpha;ctx.fillStyle=rgbToHex(Math.round(rgb[0]*0.6),Math.min(255,rgb[1]+60),Math.round(rgb[2]*0.6));ctx.fillRect(x*pePixelSize,y*pePixelSize,pePixelSize,pePixelSize);}}}
   ctx.globalAlpha=1;
 }
-// === PROJECT FILE SYSTEM (.pxs) ===
+// Plugin button
+document.getElementById('pluginBtn')?.addEventListener('click', function() {
+    var list = document.getElementById('pluginList');
+    if (list) {
+        var plugins = PixelStudioPlugin.list();
+        list.innerHTML = '';
+        if (plugins.length === 0) {
+            list.innerHTML = '<div style="font-size:11px;color:var(--fg3);padding:8px">No plugins loaded</div>';
+        } else {
+            plugins.forEach(function(p) {
+                var item = document.createElement('div');
+                item.className = 'pv-saved-item';
+                item.innerHTML = '<span style="flex:1;font-size:11px">' + p.name + ' <span style="color:var(--fg3)">v' + p.version + '</span></span><span style="font-size:10px;color:var(--fg3)">tools:' + p.tools + ' filters:' + p.filters + '</span>';
+                list.appendChild(item);
+            });
+        }
+    }
+    document.getElementById('pluginManager').classList.add('show');
+});// === PROJECT FILE SYSTEM (.pxs) ===
 function peSerializeProject(n){
   return JSON.stringify({
     version:'1.0',name:n||'Untitled',canvas:{width:peGridSize,height:peGridSize},
@@ -819,6 +840,8 @@ window.__debug={
   setActiveLayer:(i)=>{if(i>=0&&i<peLayers.length){peActiveLayer=i;peRenderLayerPanel();}}
 };
 console.log('Pixel Studio v0.7.0 loaded. Layers enabled. Use window.__debug for verification.');
+
+
 
 
 

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -12,6 +12,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="PixelStudio">
+<link rel="stylesheet" href="styles.css">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -221,7 +222,7 @@ body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,sans-
   <button class="active" data-view="pixel" id="navPixel">Pixel Editor</button>
   <button data-view="palette" id="navPalette">Palette Gen</button>
   <span class="spacer"></span>
-  <button class="install-btn" id="installBtn">Install</button>
+  <button class="install-btn" id="pluginBtn">Plugins</button><button class="install-btn" id="installBtn">Install</button>
 </nav>
 <div class="view pixel-view active" id="viewPixel">
   <div class="pe-toolbar">
@@ -299,7 +300,7 @@ body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,sans-
         <div class="pe-layer-header">
           <h3>Layers</h3>
           <button id="layerAdd" title="Add Layer">+</button>
-          <button id="layerDel" title="Delete Layer">−</button>
+          <button id="layerDel" title="Delete Layer">鈭?/button>
         </div>
         <div class="pe-layer-list" id="layerList"></div>
         <div class="pe-layer-actions">
@@ -334,7 +335,7 @@ body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,sans-
         <div class="pe-layer-header">
           <h3>Layers</h3>
           <button id="layerAdd" title="Add Layer">+</button>
-          <button id="layerDel" title="Delete Layer">−</button>
+          <button id="layerDel" title="Delete Layer">鈭?/button>
         </div>
         <div class="pe-layer-list" id="layerList"></div>
         <div class="pe-layer-actions">
@@ -408,7 +409,7 @@ body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,sans-
   </div>
 </div>
 <div class="view palette-view" id="viewPalette">
-  <div class="pv-header"><h1>Palette Generator</h1><div class="sub">Pick a base color — get 6 harmony palettes</div></div>
+  <div class="pv-header"><h1>Palette Generator</h1><div class="sub">Pick a base color 鈥?get 6 harmony palettes</div></div>
   <div class="pv-extract-row"><label>Extract from image</label><input type="file" id="pvImageInput" accept="image/*"><span style="font-size:10px;color:var(--fg3)">Extracts 8 dominant colors</span></div>
   <div class="pv-input-row">
     <label>Base</label>
@@ -449,7 +450,15 @@ body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,sans-
     </div>
   </div>
 </div>
-<div class="modal-overlay" id="helpOverlay">
+<div class="modal-overlay" id="pluginManager">
+  <div class="modal-box" style="max-width:480px;max-height:60vh;overflow-y:auto">
+    <h2>Plugins</h2>
+    <div id="pluginList" style="margin:10px 0;max-height:200px;overflow-y:auto"></div>
+    <div class="modal-actions">
+      <button class="m-primary" onclick="document.getElementById('pluginManager').classList.remove('show')">Close</button>
+    </div>
+  </div>
+</div><div class="modal-overlay" id="helpOverlay">
   <div class="modal-box" style="max-width:520px">
     <h2>Keyboard Shortcuts</h2>
     <div class="help-grid">
@@ -504,6 +513,10 @@ body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,sans-
 <input type="file" id="peFileInput" accept=".pxs" style="display:none">
 </body>
 <script src="app.js"></script><script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js" defer></script></html>
+
+
+
+
 
 
 

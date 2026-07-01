@@ -1,0 +1,18 @@
+﻿[
+    {
+        "name": "Dither Filters",
+        "version": "1.0.0",
+        "description": "Floyd-Steinberg and Bayer matrix dithering algorithms",
+        "author": "Pixel Studio Team",
+        "url": "plugins/dither-filters.js",
+        "features": { "tools": 0, "filters": 1, "formats": 0 }
+    },
+    {
+        "name": "Palette Exchange",
+        "version": "1.0.0",
+        "description": "Import and export GIMP/Adobe palette formats",
+        "author": "Pixel Studio Team",
+        "url": "plugins/palette-exchange.js",
+        "features": { "tools": 0, "filters": 0, "formats": 1 }
+    }
+]

@@ -1,0 +1,13 @@
+﻿name: Lighthouse
+on: [push]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lighthouse Audit
+        uses: treosh/lighthouse-ci-action@v11
+        with:
+          url: https://redrighthand05.github.io/pixel-studio/
+          uploadArtifacts: true
+          temporaryPublicStorage: true
