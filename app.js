@@ -3,7 +3,6 @@ const AppState = {
   currentColor: '#4fc3f7', sharedPalette: null, activeView: 'pixel'
 };
 
-// === Toast Stack ===
 function showToast(msg, duration) {
   duration = duration || 1500;
   const container = document.getElementById('toastContainer');
@@ -14,7 +13,6 @@ function showToast(msg, duration) {
   setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, duration);
 }
 
-// === Tab Navigation ===
 document.querySelectorAll('[data-view]').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('[data-view]').forEach(b => b.classList.remove('active'));
@@ -36,6 +34,7 @@ const PE_COLORS = [
   '#7950f2','#ae3ec9','#d6336c','#c2255c','#e64980','#f06595','#e599f7','#b197fc'
 ];
 const PE_MAX_HISTORY = 50, PE_MAX_HIST_COLORS = 10;
+const BLEND_MODES = ['normal','multiply','screen','overlay','darken','lighten','difference'];
 let peGridSize = 16, pePixelSize = 24, peShowGrid = true;
 let peTool = 'pencil', peColor = AppState.currentColor, peDrawing = false;
 let peHistory = [], peHistoryIdx = -1, peColorHistory = [];
@@ -46,27 +45,103 @@ let peSelecting = false, peSelStartX = 0, peSelStartY = 0;
 let peClipboard = null;
 let pePanning = false, pePanStartX = 0, pePanStartY = 0, pePanCX = 0, pePanCY = 0;
 let peSprayDensity = 8, peSprayRadius = 4;
+// Layer system
+let peLayers = [], peActiveLayer = 0;
+
 const peCanvas = document.getElementById('pixelCanvas');
 const peCtx = peCanvas.getContext('2d');
 const peCanvasArea = document.getElementById('peCanvasArea');
 const peSelOverlay = document.getElementById('selectionOverlay');
-let peData = [];
+
+function peCreateLayer(name) {
+  return {
+    name: name || 'Layer ' + (peLayers.length + 1),
+    visible: true, locked: false,
+    opacity: 1.0, blendMode: 'normal',
+    data: Array(peGridSize).fill().map(() => Array(peGridSize).fill('#ffffff00'))
+  };
+}
 
 function peInit() {
+  peLayers = []; peLayers.push(peCreateLayer('Background'));
+  peActiveLayer = 0;
   peCanvas.width = peGridSize * pePixelSize;
   peCanvas.height = peGridSize * pePixelSize;
-  peData = Array(peGridSize).fill().map(() => Array(peGridSize).fill('#ffffff00'));
   peSelection = null; peHideSelection();
   peSaveState(); peRender(); peUpdateStatusBar();
+  peRenderLayerPanel();
+}
+
+// === Hex utilities ===
+function hexToRgb(hex) {
+  hex = hex.replace('#','');
+  return [parseInt(hex.slice(0,2),16), parseInt(hex.slice(2,4),16), parseInt(hex.slice(4,6),16)];
+}
+function rgbToHex(r,g,b) {
+  return '#'+[r,g,b].map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('');
+}
+// === Composite rendering ===
+function peBlend(base, overlay, mode, opacity) {
+  if (!overlay || overlay === '#ffffff00') return base;
+  if (!base || base === '#ffffff00') return overlay;
+  const [br,bg,bb] = hexToRgb(base);
+  const [or,og,ob] = hexToRgb(overlay);
+  let r=or,g=og,b=ob;
+  switch(mode) {
+    case 'multiply': r=br*or/255; g=bg*og/255; b=bb*ob/255; break;
+    case 'screen': r=255-(255-br)*(255-or)/255; g=255-(255-bg)*(255-og)/255; b=255-(255-bb)*(255-ob)/255; break;
+    case 'overlay': r=br<128?2*br*or/255:255-2*(255-br)*(255-or)/255; g=bg<128?2*bg*og/255:255-2*(255-bg)*(255-og)/255; b=bb<128?2*bb*ob/255:255-2*(255-bb)*(255-ob)/255; break;
+    case 'darken': r=Math.min(br,or); g=Math.min(bg,og); b=Math.min(bb,ob); break;
+    case 'lighten': r=Math.max(br,or); g=Math.max(bg,og); b=Math.max(bb,ob); break;
+    case 'difference': r=Math.abs(br-or); g=Math.abs(bg-og); b=Math.abs(bb-ob); break;
+    default: break;
+  }
+  // Apply opacity: blend(o) * opacity + base * (1-opacity)
+  if (opacity < 1) {
+    r = r * opacity + br * (1 - opacity);
+    g = g * opacity + bg * (1 - opacity);
+    b = b * opacity + bb * (1 - opacity);
+  }
+  return rgbToHex(r, g, b);
+}
+
+function peGetComposite() {
+  const composite = Array(peGridSize).fill().map(() => Array(peGridSize).fill('#ffffff00'));
+  for (let i = 0; i < peLayers.length; i++) {
+    const layer = peLayers[i];
+    if (!layer.visible) continue;
+    for (let y = 0; y < peGridSize; y++)
+      for (let x = 0; x < peGridSize; x++) {
+        const overlay = layer.data[y][x];
+        if (!overlay || overlay === '#ffffff00') continue;
+        const base = composite[y][x];
+        composite[y][x] = peBlend(base, overlay, layer.blendMode, layer.opacity);
+      }
+  }
+  return composite;
+}
+
+function peGetCompositePixel(x, y) {
+  if (x < 0 || x >= peGridSize || y < 0 || y >= peGridSize) return '#ffffff00';
+  let result = '#ffffff00';
+  for (let i = 0; i < peLayers.length; i++) {
+    const layer = peLayers[i];
+    if (!layer.visible) continue;
+    const overlay = layer.data[y][x];
+    if (!overlay || overlay === '#ffffff00') continue;
+    result = peBlend(result, overlay, layer.blendMode, layer.opacity);
+  }
+  return result;
 }
 
 function peRender() {
   if (!peCtx) return;
+  const composite = peGetComposite();
   peCtx.clearRect(0, 0, peCanvas.width, peCanvas.height);
   const cs = pePixelSize / 2;
   for (let y = 0; y < peGridSize; y++)
     for (let x = 0; x < peGridSize; x++) {
-      const px = x * pePixelSize, py = y * pePixelSize, p = peData[y][x];
+      const px = x * pePixelSize, py = y * pePixelSize, p = composite[y][x];
       if (!p || p === '#ffffff00' || p === '') {
         for (let cy = 0; cy < 2; cy++)
           for (let cx = 0; cx < 2; cx++) {
@@ -87,228 +162,155 @@ function peRender() {
 }
 
 function peSaveState() {
-  const s = peData.map(r=>[...r]);
+  const s = peLayers.map(l => ({...l, data: l.data.map(r=>[...r])}));
   peHistory = peHistory.slice(0, peHistoryIdx + 1);
-  peHistory.push(s); if (peHistory.length > PE_MAX_HISTORY) peHistory.shift();
+  peHistory.push(s);
+  if (peHistory.length > PE_MAX_HISTORY) peHistory.shift();
   peHistoryIdx = peHistory.length - 1; peUpdateBtn();
 }
-
-function peSaveCurrent() { pePrevData = peData.map(r=>[...r]); }
-function peRestorePreview() { if (pePrevData) peData = pePrevData.map(r=>[...r]); }
-
+function peSaveCurrent() {
+  pePrevData = peLayers.map(l => ({...l, data: l.data.map(r=>[...r])}));
+}
+function peRestorePreview() {
+  if (pePrevData) peLayers = pePrevData.map(l => ({...l, data: l.data.map(r=>[...r])}));
+}
+function peSet(x, y, c) {
+  if (!peLayers[peActiveLayer] || peLayers[peActiveLayer].locked) return;
+  if (x>=0&&x<peGridSize&&y>=0&&y<peGridSize) peLayers[peActiveLayer].data[y][x]=c;
+}
+function peSetBrush(x, y, c) {
+  const bs = peBrushSize, half = Math.floor(bs / 2);
+  for (let dy = 0; dy < bs; dy++)
+    for (let dx = 0; dx < bs; dx++)
+      peSet(x + dx - half, y + dy - half, c);
+}
 function peGetPixel(ex, ey) {
   const r = peCanvas.getBoundingClientRect();
   const x = Math.floor((ex - r.left) / r.width * peGridSize);
   const y = Math.floor((ey - r.top) / r.height * peGridSize);
   if (x < 0 || x >= peGridSize || y < 0 || y >= peGridSize) return null;
-  return {x, y};
+  return {x, y, color: peGetCompositePixel(x, y)};
 }
 
-function peSet(x, y, c) { if (x>=0&&x<peGridSize&&y>=0&&y<peGridSize) peData[y][x]=c; }
-
-function peSetBrush(x, y, c) {
-  const bs = peBrushSize;
-  const half = Math.floor(bs / 2);
-  for (let dy = 0; dy < bs; dy++)
-    for (let dx = 0; dx < bs; dx++)
-      peSet(x + dx - half, y + dy - half, c);
-}
 function peDrawLine(x0, y0, x1, y1, c) {
   let dx = Math.abs(x1-x0), dy = Math.abs(y1-y0);
-  let sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
-  let err = dx - dy;
+  let sx = x0<x1?1:-1, sy = y0<y1?1:-1, err = dx - dy;
   while (true) {
     peSetBrush(x0, y0, c);
-    if (x0 === x1 && y0 === y1) break;
-    let e2 = 2 * err;
+    if (x0===x1 && y0===y1) break;
+    const e2 = 2*err;
     if (e2 > -dy) { err -= dy; x0 += sx; }
     if (e2 < dx) { err += dx; y0 += sy; }
   }
 }
-
 function peDrawCircle(cx, cy, r, c, fill) {
-  if (fill) {
-    for (let y = -r; y <= r; y++)
-      for (let x = -r; x <= r; x++)
-        if (x*x + y*y <= r*r) peSetBrush(cx + x, cy + y, c);
-    return;
-  }
-  let x = r, y = 0, err = 1 - r;
-  while (x >= y) {
-    peSetBrush(cx + x, cy + y, c); peSetBrush(cx - x, cy + y, c);
-    peSetBrush(cx + x, cy - y, c); peSetBrush(cx - x, cy - y, c);
-    peSetBrush(cx + y, cy + x, c); peSetBrush(cx - y, cy + x, c);
-    peSetBrush(cx + y, cy - x, c); peSetBrush(cx - y, cy - x, c);
-    y++;
-    if (err < 0) err += 2 * y + 1;
-    else { x--; err += 2 * (y - x) + 1; }
+  if (fill) { for (let y=-r;y<=r;y++) for (let x=-r;x<=r;x++) if (x*x+y*y<=r*r) peSetBrush(cx+x,cy+y,c); return; }
+  let x=r, y=0, err=1-r;
+  while (x>=y) {
+    peSetBrush(cx+x,cy+y,c);peSetBrush(cx-x,cy+y,c);peSetBrush(cx+x,cy-y,c);peSetBrush(cx-x,cy-y,c);
+    peSetBrush(cx+y,cy+x,c);peSetBrush(cx-y,cy+x,c);peSetBrush(cx+y,cy-x,c);peSetBrush(cx-y,cy-x,c);
+    y++; if (err<0) err+=2*y+1; else { x--; err+=2*(y-x)+1; }
   }
 }
-
 function peDrawRect(x0, y0, x1, y1, c) {
-  let minX = Math.min(x0,x1), maxX = Math.max(x0,x1);
-  let minY = Math.min(y0,y1), maxY = Math.max(y0,y1);
-  for (let y = minY; y <= maxY; y++)
-    for (let x = minX; x <= maxX; x++)
-      peSet(x, y, c);
+  const minX=Math.min(x0,x1),maxX=Math.max(x0,x1),minY=Math.min(y0,y1),maxY=Math.max(y0,y1);
+  for (let y=minY;y<=maxY;y++) for (let x=minX;x<=maxX;x++) peSet(x,y,c);
 }
-
 function peFloodFill(sx, sy, fc) {
-  const tc = peData[sy][sx]; if (tc === fc) return;
+  const layer = peLayers[peActiveLayer];
+  if (!layer || layer.locked) return;
+  const data = layer.data;
+  const tc = data[sy][sx]; if (tc === fc) return;
   const vis = new Set(), stack = [[sx, sy]];
   while (stack.length) {
     const [cx, cy] = stack.pop(), k = cx+','+cy;
     if (vis.has(k)) continue; vis.add(k);
-    if (cx<0||cx>=peGridSize||cy<0||cy>=peGridSize||peData[cy][cx]!==tc) continue;
-    peData[cy][cx] = fc;
+    if (cx<0||cx>=peGridSize||cy<0||cy>=peGridSize||data[cy][cx]!==tc) continue;
+    data[cy][cx] = fc;
     stack.push([cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]);
   }
 }
-
 function peReplaceColor(targetColor, newColor) {
-  if (targetColor === newColor) return false;
+  const layer = peLayers[peActiveLayer];
+  if (!layer || layer.locked || targetColor === newColor) return false;
   let count = 0;
-  for (let y = 0; y < peGridSize; y++)
-    for (let x = 0; x < peGridSize; x++)
-      if (peData[y][x] === targetColor) { peData[y][x] = newColor; count++; }
+  for (let y=0; y<peGridSize; y++) for (let x=0; x<peGridSize; x++)
+    if (layer.data[y][x] === targetColor) { layer.data[y][x] = newColor; count++; }
   return count > 0;
 }
-function peShowSelection(x, y, w, h) {
-  peSelOverlay.style.display = 'block';
-  peSelOverlay.style.left = (x * pePixelSize) + 'px';
-  peSelOverlay.style.top = (y * pePixelSize) + 'px';
-  peSelOverlay.style.width = (w * pePixelSize) + 'px';
-  peSelOverlay.style.height = (h * pePixelSize) + 'px';
-  peSelection = {x, y, w, h};
+// === Selection ===
+function peShowSelection(x,y,w,h) {
+  peSelOverlay.style.display='block';peSelOverlay.style.left=(x*pePixelSize)+'px';peSelOverlay.style.top=(y*pePixelSize)+'px';
+  peSelOverlay.style.width=(w*pePixelSize)+'px';peSelOverlay.style.height=(h*pePixelSize)+'px';peSelection={x,y,w,h};
 }
-function peHideSelection() { peSelOverlay.style.display = 'none'; peSelection = null; }
-function peUpdateSelectionOverlay() { if (peSelection) peShowSelection(peSelection.x, peSelection.y, peSelection.w, peSelection.h); }
-function peNormalizeSel(x0, y0, x1, y1) {
-  return {x: Math.min(x0,x1), y: Math.min(y0,y1), w: Math.abs(x1-x0)+1, h: Math.abs(y1-y0)+1};
+function peHideSelection(){peSelOverlay.style.display='none';peSelection=null;}
+function peNormalizeSel(x0,y0,x1,y1){return{x:Math.min(x0,x1),y:Math.min(y0,y1),w:Math.abs(x1-x0)+1,h:Math.abs(y1-y0)+1};}
+function peUpdateSelectionOverlay(){if(peSelection)peShowSelection(peSelection.x,peSelection.y,peSelection.w,peSelection.h);}
+function peCopySelection(){
+  if(!peSelection)return;const{x,y,w,h}=peSelection;peClipboard=[];
+  for(let sy=y;sy<y+h&&sy<peGridSize;sy++){const row=[];for(let sx=x;sx<x+w&&sx<peGridSize;sx++)row.push(peLayers[peActiveLayer]?.data[sy][sx]);peClipboard.push(row);}
 }
-function peCopySelection() {
-  if (!peSelection) return;
-  const {x,y,w,h} = peSelection; peClipboard = [];
-  for (let sy = y; sy < y+h && sy < peGridSize; sy++) { const row=[]; for (let sx=x; sx<x+w && sx<peGridSize; sx++) row.push(peData[sy][sx]); peClipboard.push(row); }
+function peCutSelection(){
+  if(!peSelection)return;peCopySelection();const{x,y,w,h}=peSelection;const data=peLayers[peActiveLayer]?.data;
+  if(!data)return;for(let sy=y;sy<y+h&&sy<peGridSize;sy++)for(let sx=x;sx<x+w&&sx<peGridSize;sx++)data[sy][sx]='#ffffff00';
+  peRender();peSaveState();
 }
-function peCutSelection() {
-  if (!peSelection) return; peCopySelection();
-  const {x,y,w,h} = peSelection;
-  for (let sy=y; sy<y+h && sy<peGridSize; sy++) for (let sx=x; sx<x+w && sx<peGridSize; sx++) peData[sy][sx]='#ffffff00';
-  peRender(); peSaveState();
+function pePasteSelection(){
+  if(!peClipboard)return;let px=0,py=0;if(peSelection){px=peSelection.x;py=peSelection.y;}const data=peLayers[peActiveLayer]?.data;if(!data)return;
+  for(let sy=0;sy<peClipboard.length&&py+sy<peGridSize;sy++)for(let sx=0;sx<peClipboard[sy].length&&px+sx<peGridSize;sx++)if(peClipboard[sy][sx])data[py+sy][px+sx]=peClipboard[sy][sx];
+  peRender();peSaveState();
 }
-function pePasteSelection() {
-  if (!peClipboard) return;
-  let px=0, py=0; if (peSelection) { px=peSelection.x; py=peSelection.y; }
-  for (let sy=0; sy<peClipboard.length && py+sy<peGridSize; sy++)
-    for (let sx=0; sx<peClipboard[sy].length && px+sx<peGridSize; sx++)
-      if (peClipboard[sy][sx]) peData[py+sy][px+sx]=peClipboard[sy][sx];
-  peRender(); peSaveState();
+function peDeleteSelection(){
+  if(!peSelection)return;const{x,y,w,h}=peSelection;const data=peLayers[peActiveLayer]?.data;if(!data)return;
+  for(let sy=y;sy<y+h&&sy<peGridSize;sy++)for(let sx=x;sx<x+w&&sx<peGridSize;sx++)data[sy][sx]='#ffffff00';
+  peRender();peSaveState();
 }
-function peDeleteSelection() {
-  if (!peSelection) return;
-  const {x,y,w,h} = peSelection;
-  for (let sy=y; sy<y+h && sy<peGridSize; sy++) for (let sx=x; sx<x+w && sx<peGridSize; sx++) peData[sy][sx]='#ffffff00';
-  peRender(); peSaveState();
+function peSelectAll(){peShowSelection(0,0,peGridSize,peGridSize);}
+
+function peSpray(cx,cy,color,density,radius){
+  for(let i=0;i<density;i++){const angle=Math.random()*2*Math.PI,dist=Math.random()*radius;peSet(Math.round(cx+Math.cos(angle)*dist),Math.round(cy+Math.sin(angle)*dist),color);}
 }
-function peSelectAll() { peShowSelection(0,0,peGridSize,peGridSize); }
-function peSpray(cx, cy, color, density, radius) {
-  for (let i=0; i<density; i++) {
-    const angle = Math.random()*2*Math.PI;
-    const dist = Math.random()*radius;
-    const x = Math.round(cx+Math.cos(angle)*dist), y = Math.round(cy+Math.sin(angle)*dist);
-    peSet(x, y, color);
-  }
+
+function peUndo(){if(peHistoryIdx<=0)return;peHistoryIdx--;peLayers=peHistory[peHistoryIdx].map(l=>({...l,data:l.data.map(r=>[...r])}));peRender();peUpdateBtn();peRenderLayerPanel();}
+function peRedo(){if(peHistoryIdx>=peHistory.length-1)return;peHistoryIdx++;peLayers=peHistory[peHistoryIdx].map(l=>({...l,data:l.data.map(r=>[...r])}));peRender();peUpdateBtn();peRenderLayerPanel();}
+function peUpdateBtn(){const u=document.getElementById('peUndo'),r=document.getElementById('peRedo');if(u)u.style.opacity=peHistoryIdx<=0?'0.3':'1';if(r)r.style.opacity=peHistoryIdx>=peHistory.length-1?'0.3':'1';}
+
+function peBuildPalette(){
+  const container=document.getElementById('pePalette');if(!container)return;container.innerHTML='';
+  (AppState.sharedPalette||PE_COLORS).forEach(c=>{const d=document.createElement('div');d.className='pe-swatch'+(c===peColor?' active':'');d.style.background=c;d.dataset.color=c;d.addEventListener('click',()=>peSelectColor(c));container.appendChild(d);});
 }
-function peUndo() {
-  if (peHistoryIdx <= 0) return;
-  peHistoryIdx--; peData = peHistory[peHistoryIdx].map(r=>[...r]); peRender(); peUpdateBtn();
+function peBuildHistory(){
+  const container=document.getElementById('peColorHistory');if(!container)return;container.innerHTML='';
+  peColorHistory.forEach(c=>{const d=document.createElement('div');d.className='pe-swatch';d.style.background=c;d.dataset.color=c;d.addEventListener('click',()=>peSelectColor(c));container.appendChild(d);});
 }
-function peRedo() {
-  if (peHistoryIdx >= peHistory.length - 1) return;
-  peHistoryIdx++; peData = peHistory[peHistoryIdx].map(r=>[...r]); peRender(); peUpdateBtn();
+function peAddHistory(c){peColorHistory=peColorHistory.filter(x=>x!==c);peColorHistory.unshift(c);if(peColorHistory.length>PE_MAX_HIST_COLORS)peColorHistory.pop();}
+function peSelectColor(c){peColor=c;AppState.currentColor=c;const cur=document.getElementById('peCurColor');if(cur)cur.style.background=c;const picker=document.getElementById('peColorPicker');if(picker)picker.value=c;document.querySelectorAll('#pePalette .pe-swatch').forEach(el=>el.classList.toggle('active',el.dataset.color===c));peAddHistory(c);peBuildHistory();}
+
+function peUpdateStatusBar(){
+  const sbTool=document.getElementById('sbTool'),sbPos=document.getElementById('sbPos'),sbZoom=document.getElementById('sbZoom'),sbSize=document.getElementById('sbSize');
+  const names={pencil:'Pencil',eraser:'Eraser',eyedropper:'Eye',fill:'Fill',line:'Line',rect:'Rect',circle:'Circle',select:'Select',spray:'Spray',replace:'Replace'};
+  if(sbTool)sbTool.textContent=names[peTool]||peTool;if(sbSize)sbSize.textContent=peGridSize+'x'+peGridSize;if(sbZoom)sbZoom.textContent=Math.round(pePixelSize/peGridSize*100*peGridSize)+'%';
 }
-function peUpdateBtn() {
-  const u = document.getElementById('peUndo'), r = document.getElementById('peRedo');
-  if (u) u.style.opacity = peHistoryIdx <= 0 ? '0.3' : '1';
-  if (r) r.style.opacity = peHistoryIdx >= peHistory.length - 1 ? '0.3' : '1';
-}
-function peBuildPalette() {
-  const container = document.getElementById('pePalette'); if (!container) return;
-  container.innerHTML = '';
-  const colors = AppState.sharedPalette || PE_COLORS;
-  colors.forEach(c => {
-    const d = document.createElement('div');
-    d.className = 'pe-swatch' + (c === peColor ? ' active' : '');
-    d.style.background = c; d.dataset.color = c;
-    d.addEventListener('click', () => peSelectColor(c));
-    container.appendChild(d);
-  });
-}
-function peBuildHistory() {
-  const container = document.getElementById('peColorHistory'); if (!container) return;
-  container.innerHTML = '';
-  peColorHistory.forEach(c => {
-    const d = document.createElement('div');
-    d.className = 'pe-swatch'; d.style.background = c; d.dataset.color = c;
-    d.addEventListener('click', () => peSelectColor(c));
-    container.appendChild(d);
-  });
-}
-function peAddHistory(c) {
-  peColorHistory = peColorHistory.filter(x => x !== c);
-  peColorHistory.unshift(c);
-  if (peColorHistory.length > PE_MAX_HIST_COLORS) peColorHistory.pop();
-}
-function peSelectColor(c) {
-  peColor = c; AppState.currentColor = c;
-  const cur = document.getElementById('peCurColor');
-  if (cur) cur.style.background = c;
-  const picker = document.getElementById('peColorPicker');
-  if (picker) picker.value = c;
-  document.querySelectorAll('#pePalette .pe-swatch').forEach(el => el.classList.toggle('active', el.dataset.color === c));
-  peAddHistory(c); peBuildHistory();
-}
-function peUpdateStatusBar() {
-  const sbTool = document.getElementById('sbTool');
-  const sbPos = document.getElementById('sbPos');
-  const sbZoom = document.getElementById('sbZoom');
-  const sbSize = document.getElementById('sbSize');
-  const toolNames = {pencil:'Pencil',eraser:'Eraser',eyedropper:'EyeDrop',fill:'Fill',line:'Line',rect:'Rect',circle:'Circle',select:'Select',spray:'Spray',replace:'Replace'};
-  if (sbTool) sbTool.textContent = toolNames[peTool] || peTool;
-  if (sbSize) sbSize.textContent = peGridSize + 'x' + peGridSize;
-  if (sbZoom) sbZoom.textContent = Math.round(pePixelSize / peGridSize * 100 * peGridSize) + '%';
-}
-function peSetZoom(newZoom) {
-  pePixelSize = Math.max(4, Math.min(64, newZoom));
-  const zoomSlider = document.getElementById('peZoom');
-  if (zoomSlider) zoomSlider.value = pePixelSize;
-  const zoomVal = document.getElementById('peZoomVal');
-  if (zoomVal) zoomVal.textContent = pePixelSize + 'x';
-  peCanvas.width = peGridSize * pePixelSize;
-  peCanvas.height = peGridSize * pePixelSize;
-  peRender(); peUpdateStatusBar();
+function peSetZoom(nz){
+  pePixelSize=Math.max(4,Math.min(64,nz));const zs=document.getElementById('peZoom');if(zs)zs.value=pePixelSize;const zv=document.getElementById('peZoomVal');if(zv)zv.textContent=pePixelSize+'x';
+  peCanvas.width=peGridSize*pePixelSize;peCanvas.height=peGridSize*pePixelSize;peRender();peUpdateStatusBar();
 }
 peCanvas.addEventListener('mousedown', e => {
   if (peTool === 'select') {
     const pos = peGetPixel(e.clientX, e.clientY); if (!pos) return;
-    if (peSelection && pos.x >= peSelection.x && pos.x < peSelection.x + peSelection.w &&
-        pos.y >= peSelection.y && pos.y < peSelection.y + peSelection.h) {
-      peDrawing = true; peSaveCurrent();
-      peSelStartX = pos.x - peSelection.x; peSelStartY = pos.y - peSelection.y;
-      return;
+    if (peSelection && pos.x>=peSelection.x && pos.x<peSelection.x+peSelection.w && pos.y>=peSelection.y && pos.y<peSelection.y+peSelection.h) {
+      peDrawing = true; peSaveCurrent(); peSelStartX = pos.x - peSelection.x; peSelStartY = pos.y - peSelection.y; return;
     }
-    peSelecting = true; peSelStartX = pos.x; peSelStartY = pos.y;
-    return;
+    peSelecting = true; peSelStartX = pos.x; peSelStartY = pos.y; return;
   }
   const pos = peGetPixel(e.clientX, e.clientY); if (!pos) return;
   peDrawing = true;
-  if (peTool === 'fill') { peFloodFill(pos.x,pos.y,peColor); peSaveState(); peRender(); return; }
-  if (peTool === 'eyedropper') { const c=peData[pos.y][pos.x]; if(c&&c!=='#ffffff00') peSelectColor(c); peDrawing=false; return; }
+  if (peTool === 'fill') { peFloodFill(pos.x,pos.y,peColor); peSaveState(); peRender(); peRenderLayerPanel(); return; }
+  if (peTool === 'eyedropper') { const c = peGetCompositePixel(pos.x,pos.y); if(c&&c!=='#ffffff00') peSelectColor(c); peDrawing = false; return; }
   if (peTool === 'replace') {
-    const c=peData[pos.y][pos.x];
-    if(c&&c!=='#ffffff00'&&c!==peColor){peReplaceColor(c,peColor);peSaveState();peRender();showToast('Replaced '+c);}
-    peDrawing=false; return;
+    const c = peLayers[peActiveLayer]?.data[pos.y]?.[pos.x];
+    if(c&&c!=='#ffffff00'&&c!==peColor){peReplaceColor(c,peColor);peSaveState();peRender();peRenderLayerPanel();showToast('Replaced '+c);}
+    peDrawing = false; return;
   }
   if (peTool === 'spray') { peSpray(pos.x,pos.y,peColor,peSprayDensity,peSprayRadius); peRender(); return; }
   if (peTool === 'line'||peTool==='rect'||peTool==='circle'){peStartX=pos.x;peStartY=pos.y;peSaveCurrent();return;}
@@ -319,88 +321,75 @@ peCanvas.addEventListener('mousemove', e => {
   const pos = peGetPixel(e.clientX, e.clientY);
   const cursorEl = document.getElementById('peCursor');
   const sbPos = document.getElementById('sbPos');
-  if (pos) {
-    if (cursorEl) cursorEl.textContent = '('+pos.x+', '+pos.y+')';
-    if (sbPos) sbPos.textContent = pos.x+', '+pos.y;
-  }
-  if (pePanning) {
-    const dx=e.clientX-pePanStartX, dy=e.clientY-pePanStartY;
-    peCanvasArea.scrollLeft=pePanCX-dx; peCanvasArea.scrollTop=pePanCY-dy;
-    return;
-  }
+  if (pos) { if (cursorEl) cursorEl.textContent = '('+pos.x+', '+pos.y+')'; if (sbPos) sbPos.textContent = pos.x+', '+pos.y; }
+  if (pePanning) { const dx=e.clientX-pePanStartX,dy=e.clientY-pePanStartY; peCanvasArea.scrollLeft=pePanCX-dx; peCanvasArea.scrollTop=pePanCY-dy; return; }
   if (!peDrawing||!pos) return;
   if (peTool==='fill'||peTool==='eyedropper'||peTool==='replace') return;
   if (peTool==='spray'){peSpray(pos.x,pos.y,peColor,peSprayDensity,peSprayRadius);peRender();return;}
   if (peTool==='select'&&peSelecting&&pos){const sel=peNormalizeSel(peSelStartX,peSelStartY,pos.x,pos.y);peShowSelection(sel.x,sel.y,sel.w,sel.h);return;}
   if (peTool==='line'){peRestorePreview();peDrawLine(peStartX,peStartY,pos.x,pos.y,peTool==='eraser'?'#ffffff00':peColor);peRender();return;}
   if (peTool==='rect'){peRestorePreview();peDrawRect(peStartX,peStartY,pos.x,pos.y,peTool==='eraser'?'#ffffff00':peColor);peRender();return;}
-  if (peTool==='circle'){
-    peRestorePreview();
-    const dx=pos.x-peStartX,dy=pos.y-peStartY;
-    const radius=e.shiftKey?Math.max(Math.abs(dx),Math.abs(dy)):Math.round(Math.sqrt(dx*dx+dy*dy));
-    peDrawCircle(peStartX,peStartY,radius,peColor,false);peRender();return;
-  }
+  if (peTool==='circle'){peRestorePreview();const dx=pos.x-peStartX,dy=pos.y-peStartY;const radius=e.shiftKey?Math.max(Math.abs(dx),Math.abs(dy)):Math.round(Math.sqrt(dx*dx+dy*dy));peDrawCircle(peStartX,peStartY,radius,peColor,false);peRender();return;}
   peSetBrush(pos.x,pos.y,peTool==='eraser'?'#ffffff00':peColor);peRender();
 });
-document.addEventListener('mouseup', () => {
-  if (pePanning) { pePanning = false; document.body.style.cursor = ''; return; }
-  if (peDrawing && peTool === 'select') { peDrawing = false; if(pePrevData){peSaveState();pePrevData=null;} return; }
-  if (peSelecting && peTool === 'select') { peSelecting = false; if(peSelection&&(peSelection.w<1||peSelection.h<1))peHideSelection(); return; }
-  if (peDrawing && (peTool==='line'||peTool==='rect'||peTool==='circle')){peDrawing=false;peSaveState();pePrevData=null;return;}
-  if (peDrawing && peTool==='spray'){peDrawing=false;peSaveState();return;}
-  if(peDrawing){peDrawing=false;if(peTool!=='fill'&&peTool!=='eyedropper'&&peTool!=='replace')peSaveState();}
-});
-peCanvas.addEventListener('mouseleave', () => {
-  const cursorEl=document.getElementById('peCursor'); if(cursorEl) cursorEl.textContent='Click to paint - Drag to draw';
-  if(peDrawing&&(peTool==='line'||peTool==='rect'||peTool==='circle')){peDrawing=false;peRestorePreview();peRender();pePrevData=null;}
-  if(peSelecting)peSelecting=false;
-});
 
-document.querySelectorAll('[data-pe-tool]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('[data-pe-tool]').forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active'); peTool=btn.dataset.peTool;
-    peCanvas.style.cursor = {fill:'cell',line:'crosshair',rect:'crosshair',circle:'crosshair',select:'crosshair',spray:'crosshair',replace:'crosshair',eraser:'crosshair',eyedropper:'crosshair'}[peTool]||'crosshair';
+document.addEventListener('mouseup', () => {
+  if (pePanning) { pePanning=false; document.body.style.cursor=''; return; }
+  if (peDrawing && peTool==='select'){peDrawing=false;if(pePrevData){peSaveState();pePrevData=null;peRenderLayerPanel();} return;}
+  if (peSelecting && peTool==='select'){peSelecting=false;if(peSelection&&(peSelection.w<1||peSelection.h<1))peHideSelection();return;}
+  if (peDrawing && (peTool==='line'||peTool==='rect'||peTool==='circle')){peDrawing=false;peSaveState();pePrevData=null;peRenderLayerPanel();return;}
+  if (peDrawing && peTool==='spray'){peDrawing=false;peSaveState();peRenderLayerPanel();return;}
+  if(peDrawing){peDrawing=false;if(peTool!=='fill'&&peTool!=='eyedropper'&&peTool!=='replace'){peSaveState();peRenderLayerPanel();}}
+});
+peCanvas.addEventListener('mouseleave',()=>{const c=document.getElementById('peCursor');if(c)c.textContent='Click to paint - Drag to draw';if(peDrawing&&(peTool==='line'||peTool==='rect'||peTool==='circle')){peDrawing=false;peRestorePreview();peRender();pePrevData=null;}if(peSelecting)peSelecting=false;});
+// === Tool selection ===
+document.querySelectorAll('[data-pe-tool]').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('[data-pe-tool]').forEach(b=>b.classList.remove('active'));btn.classList.add('active');peTool=btn.dataset.peTool;
+    peCanvas.style.cursor={fill:'cell',line:'crosshair',rect:'crosshair',circle:'crosshair',select:'crosshair',spray:'crosshair',replace:'crosshair',eraser:'crosshair',eyedropper:'crosshair'}[peTool]||'crosshair';
     const sr1=document.getElementById('sprayDensityRow'),sr2=document.getElementById('sprayRadiusRow');
     if(peTool==='spray'){if(sr1)sr1.classList.add('show');if(sr2)sr2.classList.add('show');}else{if(sr1)sr1.classList.remove('show');if(sr2)sr2.classList.remove('show');}
     peUpdateStatusBar();
   });
 });
-document.querySelectorAll('[data-bs]').forEach(btn => {
-  btn.addEventListener('click',()=>{document.querySelectorAll('[data-bs]').forEach(b=>b.classList.remove('active'));btn.classList.add('active');peBrushSize=parseInt(btn.dataset.bs);});
-});
+document.querySelectorAll('[data-bs]').forEach(btn=>{btn.addEventListener('click',()=>{document.querySelectorAll('[data-bs]').forEach(b=>b.classList.remove('active'));btn.classList.add('active');peBrushSize=parseInt(btn.dataset.bs);});});
 document.getElementById('peUndo')?.addEventListener('click',peUndo);
 document.getElementById('peRedo')?.addEventListener('click',peRedo);
-document.getElementById('peClear')?.addEventListener('click',()=>{if(!confirm('Clear the canvas?'))return;peData=Array(peGridSize).fill().map(()=>Array(peGridSize).fill('#ffffff00'));peSaveState();peRender();});
+document.getElementById('peClear')?.addEventListener('click',()=>{if(!confirm('Clear the canvas?'))return;peLayers.forEach(l=>{l.data=Array(peGridSize).fill().map(()=>Array(peGridSize).fill('#ffffff00'));});peSaveState();peRender();peRenderLayerPanel();});
+
+// Resize
 document.getElementById('peResizeBtn')?.addEventListener('click',()=>{document.getElementById('resizeWidth').value=peGridSize;document.getElementById('resizeHeight').value=peGridSize;document.getElementById('resizeCurrent').textContent=peGridSize+'x'+peGridSize;document.getElementById('resizeDialog').classList.add('show');});
 document.getElementById('resizeApply')?.addEventListener('click',()=>{
   const nw=parseInt(document.getElementById('resizeWidth').value),nh=parseInt(document.getElementById('resizeHeight').value),mode=document.getElementById('resizeMode').value;
   if(isNaN(nw)||isNaN(nh)||nw<1||nh<1||nw>256||nh>256)return;
-  const oldSize=peGridSize,oldData=peData; peGridSize=nw; peData=Array(peGridSize).fill().map(()=>Array(peGridSize).fill('#ffffff00'));
-  if(mode==='stretch'){for(let y=0;y<peGridSize;y++)for(let x=0;x<peGridSize;x++){const sx=Math.floor(x/peGridSize*oldSize),sy=Math.floor(y/peGridSize*oldSize);if(sx<oldSize&&sy<oldSize)peData[y][x]=oldData[sy][sx];}}
-  else if(mode==='crop'){const ox=Math.max(0,Math.floor((oldSize-peGridSize)/2)),oy=Math.max(0,Math.floor((oldSize-peGridSize)/2));for(let y=0;y<Math.min(peGridSize,oldSize-oy);y++)for(let x=0;x<Math.min(peGridSize,oldSize-ox);x++)if(oy+y<oldSize&&ox+x<oldSize)peData[y][x]=oldData[oy+y][ox+x];}
-  else{const ox=Math.max(0,Math.floor((peGridSize-oldSize)/2)),oy=Math.max(0,Math.floor((peGridSize-oldSize)/2));for(let y=0;y<oldSize&&oy+y<peGridSize;y++)for(let x=0;x<oldSize&&ox+x<peGridSize;x++)peData[oy+y][ox+x]=oldData[y][x];}
+  const oldSize=peGridSize;
+  peGridSize=nw;
+  peLayers.forEach(l=>{
+    const oldData=l.data; l.data=Array(peGridSize).fill().map(()=>Array(peGridSize).fill('#ffffff00'));
+    if(mode==='stretch'){for(let y=0;y<peGridSize;y++)for(let x=0;x<peGridSize;x++){const sx=Math.floor(x/peGridSize*oldSize),sy=Math.floor(y/peGridSize*oldSize);if(sx<oldSize&&sy<oldSize)l.data[y][x]=oldData[sy][sx];}}
+    else if(mode==='crop'){const ox=Math.max(0,Math.floor((oldSize-peGridSize)/2)),oy=Math.max(0,Math.floor((oldSize-peGridSize)/2));for(let y=0;y<Math.min(peGridSize,oldSize-oy);y++)for(let x=0;x<Math.min(peGridSize,oldSize-ox);x++)if(oy+y<oldSize&&ox+x<oldSize)l.data[y][x]=oldData[oy+y][ox+x];}
+    else{const ox=Math.max(0,Math.floor((peGridSize-oldSize)/2)),oy=Math.max(0,Math.floor((peGridSize-oldSize)/2));for(let y=0;y<oldSize&&oy+y<peGridSize;y++)for(let x=0;x<oldSize&&ox+x<peGridSize;x++)l.data[oy+y][ox+x]=oldData[y][x];}
+  });
   peHideSelection();document.getElementById('resizeDialog').classList.remove('show');
-  const gsSlider=document.getElementById('peGridSize');if(gsSlider)gsSlider.value=peGridSize;
-  document.getElementById('peGridSizeVal').textContent=peGridSize;
+  const gs=document.getElementById('peGridSize');if(gs)gs.value=peGridSize;document.getElementById('peGridSizeVal').textContent=peGridSize;
   peCanvas.width=peGridSize*pePixelSize;peCanvas.height=peGridSize*pePixelSize;
-  peSaveState();peRender();peUpdateStatusBar();showToast('Canvas resized to '+peGridSize+'x'+peGridSize);
+  peSaveState();peRender();peUpdateStatusBar();peRenderLayerPanel();showToast('Canvas resized to '+peGridSize+'x'+peGridSize);
 });
+// Export
 document.getElementById('peExport')?.addEventListener('click',()=>{document.getElementById('exportScale').value='4';document.getElementById('exportPreview').textContent='Output: '+(peGridSize*4)+'x'+(peGridSize*4)+' px';document.getElementById('exportDialog').classList.add('show');});
 document.getElementById('exportScale')?.addEventListener('change',function(){const s=parseInt(this.value);document.getElementById('exportPreview').textContent='Output: '+(peGridSize*s)+'x'+(peGridSize*s)+' px';});
 document.getElementById('exportApply')?.addEventListener('click',()=>{
-  const scale=parseInt(document.getElementById('exportScale').value);
-  const transparent=document.getElementById('exportTransparent').checked;
-  const showGrid=document.getElementById('exportShowGrid').checked;
+  const scale=parseInt(document.getElementById('exportScale').value),transparent=document.getElementById('exportTransparent').checked,showGrid=document.getElementById('exportShowGrid').checked;
+  const comp=peGetComposite();
   const ec=document.createElement('canvas');ec.width=peGridSize*scale;ec.height=peGridSize*scale;
   const ex=ec.getContext('2d');
   if(!transparent){ex.fillStyle='#fff';ex.fillRect(0,0,ec.width,ec.height);}
-  for(let y=0;y<peGridSize;y++)for(let x=0;x<peGridSize;x++){const c=peData[y][x];if(c&&c!=='#ffffff00'){ex.fillStyle=c;ex.fillRect(x*scale,y*scale,scale,scale);}}
+  for(let y=0;y<peGridSize;y++)for(let x=0;x<peGridSize;x++){const c=comp[y][x];if(c&&c!=='#ffffff00'){ex.fillStyle=c;ex.fillRect(x*scale,y*scale,scale,scale);}}
   if(showGrid&&scale>=4){ex.strokeStyle='rgba(0,0,0,0.15)';ex.lineWidth=1;for(let i=0;i<=peGridSize;i++){ex.beginPath();ex.moveTo(i*scale,0);ex.lineTo(i*scale,ec.height);ex.stroke();ex.beginPath();ex.moveTo(0,i*scale);ex.lineTo(ec.width,i*scale);ex.stroke();}}
   document.getElementById('exportDialog').classList.remove('show');
-  const lnk=document.createElement('a');lnk.download='pixel-art.png';lnk.href=ec.toDataURL();lnk.click();
-  showToast('Exported '+ec.width+'x'+ec.height+' PNG');
+  const lnk=document.createElement('a');lnk.download='pixel-art.png';lnk.href=ec.toDataURL();lnk.click();showToast('Exported '+ec.width+'x'+ec.height+' PNG');
 });
+
 let peGridVisible=true;
 document.getElementById('peGrid')?.addEventListener('click',()=>{peGridVisible=!peGridVisible;peShowGrid=peGridVisible;document.getElementById('peGrid').classList.toggle('active');peRender();});
 document.getElementById('peColorPicker')?.addEventListener('input',e=>peSelectColor(e.target.value));
@@ -409,6 +398,7 @@ document.getElementById('peZoom')?.addEventListener('input',e=>{peSetZoom(parseI
 document.getElementById('sprayDensity')?.addEventListener('input',e=>{peSprayDensity=parseInt(e.target.value);document.getElementById('sprayDensityVal').textContent=peSprayDensity;});
 document.getElementById('sprayRadius')?.addEventListener('input',e=>{peSprayRadius=parseInt(e.target.value);document.getElementById('sprayRadiusVal').textContent=peSprayRadius;});
 peCanvasArea.addEventListener('wheel',e=>{e.preventDefault();peSetZoom(pePixelSize+(e.deltaY>0?-1:1)*2);},{passive:false});
+
 document.addEventListener('keydown',e=>{if(e.key===' '&&!e.repeat){pePanning=true;pePanStartX=0;pePanStartY=0;pePanCX=peCanvasArea.scrollLeft;pePanCY=peCanvasArea.scrollTop;document.body.style.cursor='grab';e.preventDefault();}});
 document.addEventListener('keyup',e=>{if(e.key===' '){pePanning=false;document.body.style.cursor='';}});
 peCanvasArea.addEventListener('mousedown',e=>{if(e.button===0&&pePanning){pePanStartX=e.clientX;pePanStartY=e.clientY;pePanCX=peCanvasArea.scrollLeft;pePanCY=peCanvasArea.scrollTop;document.body.style.cursor='grabbing';e.preventDefault();}});
@@ -418,15 +408,12 @@ document.addEventListener('click',e=>{if(!e.target.closest('.context-menu'))docu
 document.querySelectorAll('[data-cm]').forEach(item=>{
   item.addEventListener('click',()=>{
     const action=item.dataset.cm;document.getElementById('contextMenu').classList.remove('show');
-    if(action==='cut')peCutSelection();
-    else if(action==='copy')peCopySelection();
-    else if(action==='paste')pePasteSelection();
-    else if(action==='clear')peDeleteSelection();
-    else if(action==='deselect')peHideSelection();
-    else if(action==='fill-selection'){if(peSelection){const{x,y,w,h}=peSelection;for(let sy=y;sy<y+h&&sy<peGridSize;sy++)for(let sx=x;sx<x+w&&sx<peGridSize;sx++)peData[sy][sx]=peColor;peRender();peSaveState();}}
+    if(action==='cut')peCutSelection();else if(action==='copy')peCopySelection();else if(action==='paste')pePasteSelection();else if(action==='clear')peDeleteSelection();else if(action==='deselect')peHideSelection();
+    else if(action==='fill-selection'){if(peSelection){const{x,y,w,h}=peSelection;const data=peLayers[peActiveLayer]?.data;if(data)for(let sy=y;sy<y+h&&sy<peGridSize;sy++)for(let sx=x;sx<x+w&&sx<peGridSize;sx++)data[sy][sx]=peColor;peRender();peSaveState();}}
   });
 });
 document.getElementById('peHelpBtn')?.addEventListener('click',()=>{document.getElementById('helpOverlay').classList.add('show');});
+
 document.addEventListener('keydown',e=>{
   if(e.ctrlKey&&e.key==='z'&&!e.shiftKey){e.preventDefault();peUndo();}
   if(e.ctrlKey&&(e.key==='Z'||(e.key==='z'&&e.shiftKey))){e.preventDefault();peRedo();}
@@ -435,9 +422,10 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Delete'||e.key==='Del'){peDeleteSelection();}
   if(e.key==='Escape'){peHideSelection();document.getElementById('helpOverlay').classList.remove('show');document.getElementById('resizeDialog').classList.remove('show');document.getElementById('exportDialog').classList.remove('show');document.getElementById('contextMenu').classList.remove('show');}
   if(e.key==='?'){document.getElementById('helpOverlay').classList.toggle('show');}
-  const toolMap={'p':'pencil','P':'pencil','e':'eraser','E':'eraser','i':'eyedropper','I':'eyedropper','f':'fill','F':'fill','l':'line','L':'line','r':'rect','R':'rect','c':'circle','C':'circle','m':'select','M':'select','s':'spray','S':'spray','k':'replace','K':'replace','g':'grid','G':'grid'};
-  if(toolMap[e.key]){if(toolMap[e.key]==='grid'){document.getElementById('peGrid')?.click();}else{const btn=document.querySelector('[data-pe-tool="'+toolMap[e.key]+'"]');if(btn)btn.click();}e.preventDefault();}
+  const tm={'p':'pencil','P':'pencil','e':'eraser','E':'eraser','i':'eyedropper','I':'eyedropper','f':'fill','F':'fill','l':'line','L':'line','r':'rect','R':'rect','c':'circle','C':'circle','m':'select','M':'select','s':'spray','S':'spray','k':'replace','K':'replace','g':'grid','G':'grid'};
+  if(tm[e.key]){if(tm[e.key]==='grid'){document.getElementById('peGrid')?.click();}else{const btn=document.querySelector('[data-pe-tool="'+tm[e.key]+'"]');if(btn)btn.click();}e.preventDefault();}
 });
+
 peCanvasArea.addEventListener('dragover',e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';});
 peCanvasArea.addEventListener('drop',e=>{
   e.preventDefault();const file=e.dataTransfer.files[0];if(!file||!file.type.startsWith('image/'))return;
@@ -446,16 +434,114 @@ peCanvasArea.addEventListener('drop',e=>{
     const tempC=document.createElement('canvas');tempC.width=peCanvas.width;tempC.height=peCanvas.height;
     const tCtx=tempC.getContext('2d');tCtx.drawImage(img,0,0,peCanvas.width,peCanvas.height);
     const imgData=tCtx.getImageData(0,0,peCanvas.width,peCanvas.height);
+    const newLayer=peCreateLayer('Imported');peLayers.push(newLayer);peActiveLayer=peLayers.length-1;
     for(let y=0;y<peGridSize;y++)for(let x=0;x<peGridSize;x++){
       const idx=(y*pePixelSize+Math.floor(pePixelSize/2))*peCanvas.width*4+(x*pePixelSize+Math.floor(pePixelSize/2))*4;
       const r=imgData.data[idx],g=imgData.data[idx+1],b=imgData.data[idx+2],a=imgData.data[idx+3];
-      if(a>128){const existing=peData[y][x];if(existing&&existing!=='#ffffff00'){}else{const hex='#'+[r,g,b].map(v=>Math.round(v).toString(16).padStart(2,'0')).join('');peData[y][x]=hex;}}
+      if(a>128){newLayer.data[y][x]='#'+[r,g,b].map(v=>Math.round(v).toString(16).padStart(2,'0')).join('');}
     }
-    peRender();peSaveState();showToast('Image imported as reference');
+    peRender();peSaveState();peRenderLayerPanel();showToast('Imported as new layer');
   };
   img.onerror=()=>showToast('Failed to load image');
   img.src=URL.createObjectURL(file);
 });
+// === Layer Panel ===
+function peRenderLayerPanel() {
+  const list = document.getElementById('layerList');
+  if (!list) return;
+  list.innerHTML = '';
+  for (let i = peLayers.length - 1; i >= 0; i--) {
+    const l = peLayers[i];
+    const item = document.createElement('div');
+    item.className = 'pe-layer-item' + (i === peActiveLayer ? ' active' : '');
+    item.draggable = true; item.dataset.layer = i;
+    // Thumbnail
+    const thumb = document.createElement('canvas');
+    thumb.className = 'pe-layer-thumb'; thumb.width = 36; thumb.height = 36;
+    const tCtx = thumb.getContext('2d');
+    for (let y = 0; y < peGridSize; y++) for (let x = 0; x < peGridSize; x++) {
+      const px = Math.floor(x * 36 / peGridSize), py = Math.floor(y * 36 / peGridSize);
+      const pw = Math.ceil((x+1)*36/peGridSize) - px, ph = Math.ceil((y+1)*36/peGridSize) - py;
+      const c = l.data[y][x];
+      if (!c || c === '#ffffff00') { tCtx.fillStyle = ((x+y)%2===0?'#ddd':'#999'); tCtx.fillRect(px,py,pw,ph); }
+      else { tCtx.fillStyle = c; tCtx.fillRect(px,py,pw,ph); }
+    }
+    // Info
+    const info = document.createElement('div'); info.className = 'pe-layer-info';
+    const name = document.createElement('div'); name.className = 'pe-layer-name'; name.textContent = l.name;
+    const opRow = document.createElement('div'); opRow.className = 'pe-layer-op-row';
+    const opInput = document.createElement('input'); opInput.type = 'range'; opInput.min = 0; opInput.max = 100;
+    opInput.value = Math.round(l.opacity * 100); opInput.className = 'pe-layer-op';
+    const opLabel = document.createElement('span'); opLabel.className = 'ol'; opLabel.textContent = Math.round(l.opacity * 100) + '%';
+    opInput.addEventListener('input', e => { peLayers[i].opacity = parseInt(e.target.value) / 100; opLabel.textContent = parseInt(e.target.value) + '%'; peRender(); peRenderLayerPanel(); });
+    opInput.addEventListener('mouseup', () => { if (i === peActiveLayer) peSaveState(); });
+    opRow.append(opInput, opLabel);
+    info.append(name, opRow);
+    // Buttons
+    const btns = document.createElement('div'); btns.className = 'pe-layer-btns';
+    const visBtn = document.createElement('button'); visBtn.textContent = l.visible ? '👁' : '○';
+    visBtn.className = l.visible ? 'on' : ''; visBtn.title = 'Toggle visibility';
+    visBtn.addEventListener('click', e => { e.stopPropagation(); peLayers[i].visible = !peLayers[i].visible; peRender(); peRenderLayerPanel(); });
+    const lockBtn = document.createElement('button'); lockBtn.textContent = l.locked ? '🔒' : '○';
+    lockBtn.className = l.locked ? 'on' : ''; lockBtn.title = 'Toggle lock';
+    lockBtn.addEventListener('click', e => { e.stopPropagation(); peLayers[i].locked = !peLayers[i].locked; peRenderLayerPanel(); });
+    btns.append(visBtn, lockBtn);
+    item.append(thumb, info, btns);
+    // Click to activate
+    item.addEventListener('click', () => { peActiveLayer = i; peRenderLayerPanel(); });
+    // Drag events
+    item.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', i); item.classList.add('dragging'); });
+    item.addEventListener('dragover', e => { e.preventDefault(); item.classList.add('drag-over'); });
+    item.addEventListener('dragleave', () => { item.classList.remove('drag-over'); });
+    item.addEventListener('drop', e => {
+      e.preventDefault(); item.classList.remove('drag-over');
+      const fromIdx = parseInt(e.dataTransfer.getData('text/plain'));
+      if (fromIdx === i) return;
+      const [layer] = peLayers.splice(fromIdx, 1);
+      const toIdx = fromIdx < i ? i - 1 : i;
+      peLayers.splice(toIdx, 0, layer);
+      peActiveLayer = toIdx;
+      peRender(); peRenderLayerPanel();
+    });
+    item.addEventListener('dragend', () => { document.querySelectorAll('.pe-layer-item').forEach(el => el.classList.remove('dragging','drag-over')); });
+    list.appendChild(item);
+  }
+  // Update blend mode selector
+  const bm = document.getElementById('layerBlendMode');
+  if (bm && peLayers[peActiveLayer]) bm.value = peLayers[peActiveLayer].blendMode;
+}
+
+// Layer operations
+document.getElementById('layerAdd')?.addEventListener('click', () => {
+  peLayers.push(peCreateLayer()); peActiveLayer = peLayers.length - 1; peRender(); peSaveState(); peRenderLayerPanel();
+});
+document.getElementById('layerDel')?.addEventListener('click', () => {
+  if (peLayers.length <= 1) { showToast('Cannot delete the only layer'); return; }
+  if (!confirm('Delete layer "' + peLayers[peActiveLayer].name + '"?')) return;
+  peLayers.splice(peActiveLayer, 1);
+  if (peActiveLayer >= peLayers.length) peActiveLayer = peLayers.length - 1;
+  peRender(); peSaveState(); peRenderLayerPanel();
+});
+document.getElementById('layerDup')?.addEventListener('click', () => {
+  const src = peLayers[peActiveLayer]; if (!src) return;
+  const newLayer = peCreateLayer(src.name + ' copy');
+  newLayer.data = src.data.map(r=>[...r]);
+  peLayers.push(newLayer); peActiveLayer = peLayers.length - 1; peRender(); peSaveState(); peRenderLayerPanel();
+});
+document.getElementById('layerMerge')?.addEventListener('click', () => {
+  if (peActiveLayer <= 0) { showToast('Cannot merge the bottom layer'); return; }
+  const bottom = peLayers[peActiveLayer - 1], top = peLayers[peActiveLayer];
+  for (let y = 0; y < peGridSize; y++) for (let x = 0; x < peGridSize; x++) {
+    const tc = top.data[y][x];
+    if (tc && tc !== '#ffffff00') bottom.data[y][x] = peBlend(bottom.data[y][x], tc, top.blendMode, top.opacity);
+  }
+  peLayers.splice(peActiveLayer, 1); peActiveLayer--;
+  peRender(); peSaveState(); peRenderLayerPanel(); showToast('Merged down');
+});
+document.getElementById('layerBlendMode')?.addEventListener('change', function() {
+  if (peLayers[peActiveLayer]) { peLayers[peActiveLayer].blendMode = this.value; peRender(); }
+});
+// === PALETTE GENERATOR ===
 function hexToHSL(hex){hex=hex.replace('#','');const r=parseInt(hex.slice(0,2),16)/255,g=parseInt(hex.slice(2,4),16)/255,b=parseInt(hex.slice(4,6),16)/255;const mx=Math.max(r,g,b),mn=Math.min(r,g,b);let h=0,s=0,l=(mx+mn)/2;if(mx!==mn){const d=mx-mn;s=l>0.5?d/(2-mx-mn):d/(mx+mn);if(mx===r)h=((g-b)/d+(g<b?6:0))/6;else if(mx===g)h=((b-r)/d+2)/6;else h=((r-g)/d+4)/6;}return{h:h*360,s:s*100,l:l*100};}
 function hslToHex(h,s,l){h/=360;s/=100;l/=100;if(s===0){const n=Math.round(l*255).toString(16).padStart(2,'0');return'#'+n+n+n}const hue2=(p,q,t)=>{if(t<0)t+=1;if(t>1)t-=1;if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p};const q=l<0.5?l*(1+s):l+s-l*s,p=2*l-q;const r=hue2(p,q,h+1/3),g=hue2(p,q,h),b=hue2(p,q,h-1/3);return'#'+[r,g,b].map(x=>Math.round(x*255).toString(16).padStart(2,'0')).join('');}
 function luminance(hex){hex=hex.replace('#','');return 0.2126*parseInt(hex.slice(0,2),16)/255+0.7152*parseInt(hex.slice(2,4),16)/255+0.0722*parseInt(hex.slice(4,6),16)/255;}
@@ -463,14 +549,14 @@ function textColor(hex){return luminance(hex)>0.5?'#222':'#eee';}
 function genPalettes(hex){const{h,s,l}=hexToHSL(hex);return{complementary:[hex,hslToHex((h+180)%360,s,l)],splitComplementary:[hex,hslToHex((h+150)%360,s,l),hslToHex((h+210)%360,s,l)],analogous:[hex,hslToHex((h+30)%360,s,Math.max(30,l-5)),hslToHex((h-30+360)%360,s,Math.min(85,l+5))],triadic:[hex,hslToHex((h+120)%360,s,l),hslToHex((h+240)%360,s,l)],tetradic:[hex,hslToHex((h+90)%360,s,l),hslToHex((h+180)%360,s,l),hslToHex((h+270)%360,s,l)],monochromatic:(()=>{const r=[];for(let i=0;i<5;i++)r.push(hslToHex(h,Math.max(20,s-10+i*2),15+i*(70/4)));return r})()};}
 const pvMeta=[{key:'complementary',label:'Complementary',desc:'h+180'},{key:'splitComplementary',label:'Split Comp',desc:'h+/-150'},{key:'analogous',label:'Analogous',desc:'h+/-30'},{key:'triadic',label:'Triadic',desc:'h+/-120'},{key:'tetradic',label:'Tetradic',desc:'+90/180/270'},{key:'monochromatic',label:'Monochromatic',desc:'l15-85%'}];
 let pvColors=[],pvTheme='dark';
+
 function pvRender(hex){
   const palettes=genPalettes(hex);pvColors=[hex,...new Set(Object.values(palettes).flat())];
   const pc=document.getElementById('pvPalettes');pc.innerHTML='';
   pvMeta.forEach(meta=>{
     const colors=palettes[meta.key];if(!colors)return;
     const card=document.createElement('div');card.className='pv-card';
-    const hdr=document.createElement('div');hdr.className='pv-card-header';
-    hdr.innerHTML='<h2>'+meta.label+'</h2><span class="desc">'+meta.desc+'</span>';card.appendChild(hdr);
+    const hdr=document.createElement('div');hdr.className='pv-card-header';hdr.innerHTML='<h2>'+meta.label+'</h2><span class="desc">'+meta.desc+'</span>';card.appendChild(hdr);
     const cd=document.createElement('div');cd.className='pv-colors'+(meta.key==='monochromatic'?' pv-mono':'');
     colors.forEach(c=>{
       const sw=document.createElement('div');sw.className='pv-swatch';sw.style.background=c;sw.dataset.color=c;
@@ -491,29 +577,28 @@ function pvUpdatePreview(hex,palettes){
   const pbar=document.getElementById('pvPbar');if(pbar)pbar.style.background='linear-gradient(90deg,'+hex+','+accent+')';
   const pbtn=document.getElementById('pvPbtn');if(pbtn){pbtn.style.background=accent;pbtn.style.color=textColor(accent);}
   const pgrad=document.getElementById('pvPgrad');if(pgrad)pgrad.style.background='linear-gradient(135deg,'+hex+' 0%,'+comp+' 50%,'+(all[all.length-1]||hex)+' 100%)';
-  const themeColors={dark:{bg:'#1a1a2e',fg:'#e0e0e0',card:'#16213e',border:'#0f3460'},light:{bg:'#f5f5f5',fg:'#222',card:'#fff',border:'#ddd'},highcontrast:{bg:'#000',fg:'#fff',card:'#111',border:'#ff0'}};
-  const t=themeColors[pvTheme]||themeColors.dark;
-  document.querySelectorAll('.pv-preview-card').forEach(c=>{c.style.background=t.card;c.style.borderColor=t.border;c.style.color=t.fg;});
-  document.querySelectorAll('.pv-ptext').forEach(el=>el.style.color=t.fg);
+  const tc={dark:{bg:'#1a1a2e',fg:'#e0e0e0',card:'#16213e',border:'#0f3460'},light:{bg:'#f5f5f5',fg:'#222',card:'#fff',border:'#ddd'},highcontrast:{bg:'#000',fg:'#fff',card:'#111',border:'#ff0'}};
+  const t=tc[pvTheme]||tc.dark;document.querySelectorAll('.pv-preview-card').forEach(c=>{c.style.background=t.card;c.style.borderColor=t.border;c.style.color=t.fg;});document.querySelectorAll('.pv-ptext').forEach(el=>el.style.color=t.fg);
 }
 function pvUpdateCSS(hex,palettes){
-  const lines=[':root {','  --primary: '+hex+';'];
-  pvMeta.forEach(meta=>{const cols=palettes[meta.key];if(cols)cols.forEach((c,i)=>{lines.push('  --'+meta.key.replace('Complementary','comp').replace('SplitComp','split')+'-'+(i+1)+': '+c+';');});});
-  lines.push('}');
+  const lines=[':root {','  --primary: '+hex+';'];pvMeta.forEach(meta=>{const cols=palettes[meta.key];if(cols)cols.forEach((c,i)=>{lines.push('  --'+meta.key.replace('Complementary','comp').replace('SplitComp','split')+'-'+(i+1)+': '+c+';');});});lines.push('}');
   const cssBox=document.getElementById('pvCss');if(cssBox)cssBox.textContent=lines.join('\n');
 }
+
+// Palette events
 document.getElementById('pvColorPicker')?.addEventListener('input',e=>{const hex=e.target.value;document.getElementById('pvHexInput').value=hex;document.getElementById('pvColorPreview').style.background=hex;pvRender(hex);AppState.currentColor=hex;});
 document.getElementById('pvHexInput')?.addEventListener('input',e=>{let val=e.target.value.trim();if(!val.startsWith('#'))val='#'+val;if(/^#[0-9a-fA-F]{6}$/.test(val)){document.getElementById('pvColorPicker').value=val;document.getElementById('pvColorPreview').style.background=val;pvRender(val);AppState.currentColor=val;}});
 document.getElementById('pvHexInput')?.addEventListener('blur',()=>{let val=document.getElementById('pvHexInput').value.trim();if(!val.startsWith('#'))val='#'+val;if(!/^#[0-9a-fA-F]{6}$/.test(val))document.getElementById('pvHexInput').value=document.getElementById('pvColorPicker').value;});
 document.getElementById('pvCss')?.addEventListener('click',()=>{navigator.clipboard.writeText(document.getElementById('pvCss').textContent).then(()=>showToast('Copied CSS'));});
 document.getElementById('pvSendToEditor')?.addEventListener('click',()=>{if(pvColors.length>0){AppState.sharedPalette=pvColors;showToast('Sent '+pvColors.length+' colors to Editor');document.getElementById('navPixel')?.click();peBuildPalette();}});
-document.querySelectorAll('[data-pvtheme]').forEach(btn=>{btn.addEventListener('click',()=>{document.querySelectorAll('[data-pvtheme]').forEach(b=>b.classList.remove('active'));btn.classList.add('active');pvTheme=btn.dataset.pvtheme;const hex=document.getElementById('pvColorPicker').value;pvRender(hex);});});
+document.querySelectorAll('[data-pvtheme]').forEach(btn=>{btn.addEventListener('click',()=>{document.querySelectorAll('[data-pvtheme]').forEach(b=>b.classList.remove('active'));btn.classList.add('active');pvTheme=btn.dataset.pvtheme;pvRender(document.getElementById('pvColorPicker').value);});});
 
+// IndexedDB
 const DB_NAME='PixelStudioDB',DB_VER=1,STORE='palettes';
 function dbOpen(){return new Promise((resolve,reject)=>{const req=indexedDB.open(DB_NAME,DB_VER);req.onupgradeneeded=(e)=>{const db=e.target.result;if(!db.objectStoreNames.contains(STORE))db.createObjectStore(STORE,{keyPath:'id',autoIncrement:true});};req.onsuccess=e=>resolve(e.target.result);req.onerror=e=>reject(e.target.error);});}
-function dbSavePalette(colors,name){return dbOpen().then(db=>{return new Promise((resolve,reject)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).add({name:name||'Palette '+new Date().toLocaleString(),colors:colors,created:Date.now()});tx.oncomplete=()=>{db.close();resolve();};tx.onerror=e=>reject(e.target.error);});});}
-function dbLoadPalettes(){return dbOpen().then(db=>{return new Promise((resolve,reject)=>{const tx=db.transaction(STORE,'readonly');const req=tx.objectStore(STORE).getAll();req.onsuccess=()=>{db.close();resolve(req.result);};req.onerror=e=>reject(e.target.error);});});}
-function dbDeletePalette(id){return dbOpen().then(db=>{return new Promise((resolve,reject)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).delete(id);tx.oncomplete=()=>{db.close();resolve();};tx.onerror=e=>reject(e.target.error);});});}
+function dbSavePalette(colors,name){return dbOpen().then(db=>new Promise((resolve,reject)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).add({name:name||'Palette '+new Date().toLocaleString(),colors:colors,created:Date.now()});tx.oncomplete=()=>{db.close();resolve();};tx.onerror=e=>reject(e.target.error);}));}
+function dbLoadPalettes(){return dbOpen().then(db=>new Promise((resolve,reject)=>{const tx=db.transaction(STORE,'readonly');const req=tx.objectStore(STORE).getAll();req.onsuccess=()=>{db.close();resolve(req.result);};req.onerror=e=>reject(e.target.error);}));}
+function dbDeletePalette(id){return dbOpen().then(db=>new Promise((resolve,reject)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).delete(id);tx.oncomplete=()=>{db.close();resolve();};tx.onerror=e=>reject(e.target.error);}));}
 
 document.getElementById('pvSavePalette')?.addEventListener('click',()=>{if(!pvColors.length)return;const name=prompt('Palette name:','My Palette');if(!name)return;dbSavePalette(pvColors,name).then(()=>showToast('Palette saved!')).catch(()=>showToast('Failed to save'));});
 document.getElementById('pvLoadPalettes')?.addEventListener('click',()=>{
@@ -524,8 +609,7 @@ document.getElementById('pvLoadPalettes')?.addEventListener('click',()=>{
     if(!palettes||palettes.length===0){list.innerHTML='<div style="font-size:11px;color:var(--fg3);padding:8px">No saved palettes</div>';}
     else{palettes.forEach(p=>{
       const item=document.createElement('div');item.className='pv-saved-item';
-      const minis=document.createElement('div');minis.className='s-minis';
-      (p.colors||[]).slice(0,8).forEach(c=>{const m=document.createElement('div');m.className='s-mini';m.style.background=c;minis.appendChild(m);});
+      const minis=document.createElement('div');minis.className='s-minis';(p.colors||[]).slice(0,8).forEach(c=>{const m=document.createElement('div');m.className='s-mini';m.style.background=c;minis.appendChild(m);});
       const name=document.createElement('span');name.className='s-name';name.textContent=p.name||'Palette';
       const del=document.createElement('span');del.className='s-del';del.textContent='x';
       del.addEventListener('click',e=>{e.stopPropagation();dbDeletePalette(p.id).then(()=>{item.remove();showToast('Deleted');});});
@@ -544,11 +628,7 @@ document.getElementById('pvImageInput')?.addEventListener('change',function(){
     const ctx=c.getContext('2d');ctx.drawImage(img,0,0,64,64);
     const data=ctx.getImageData(0,0,64,64).data;
     const colorMap={};
-    for(let i=0;i<data.length;i+=16){
-      const r=Math.round(data[i]/32)*32,g=Math.round(data[i+1]/32)*32,b=Math.round(data[i+2]/32)*32,a=data[i+3];
-      if(a<128)continue;
-      colorMap[r+','+g+','+b]=(colorMap[r+','+g+','+b]||0)+1;
-    }
+    for(let i=0;i<data.length;i+=16){const r=Math.round(data[i]/32)*32,g=Math.round(data[i+1]/32)*32,b=Math.round(data[i+2]/32)*32,a=data[i+3];if(a<128)continue;colorMap[r+','+g+','+b]=(colorMap[r+','+g+','+b]||0)+1;}
     const sorted=Object.entries(colorMap).sort((a,b)=>b[1]-a[1]);
     const top8=sorted.slice(0,8).map(([key])=>{const[r,g,b]=key.split(',').map(Number);return'#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');});
     if(top8.length>0){AppState.sharedPalette=top8;showToast('Extracted '+top8.length+' colors');document.getElementById('navPixel')?.click();peBuildPalette();}
@@ -557,24 +637,32 @@ document.getElementById('pvImageInput')?.addEventListener('change',function(){
   img.src=URL.createObjectURL(file);this.value='';
 });
 
+// PWA
 if('serviceWorker'in navigator){navigator.serviceWorker.register('sw.js').catch(function(){});}
 var deferredPrompt;
 window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();deferredPrompt=e;document.getElementById('installBtn').classList.add('show');});
 document.getElementById('installBtn')?.addEventListener('click',function(){if(deferredPrompt){deferredPrompt.prompt();deferredPrompt=null;document.getElementById('installBtn').classList.remove('show');}});
 
+// INIT
 peInit();peBuildPalette();peSelectColor('#4fc3f7');
 document.getElementById('peGrid')?.classList.add('active');peUpdateBtn();
 document.getElementById('pvColorPreview').style.background='#4fc3f7';
 pvRender('#4fc3f7');
 
 window.__debug={
-  getData:()=>peData,
+  getData:()=>peLayers[peActiveLayer]?.data,
+  getLayers:()=>peLayers.map(l=>({name:l.name,visible:l.visible,locked:l.locked,opacity:l.opacity,blendMode:l.blendMode})),
+  getLayerData:(i)=>peLayers[i]?.data,
+  getActiveLayer:()=>peActiveLayer,
+  getComposite:()=>peGetComposite(),
+  getCompositePixel:(x,y)=>peGetCompositePixel(x,y),
   getHistory:()=>({history:peHistory.length,idx:peHistoryIdx}),
   getSelection:()=>peSelection,
-  getPixel:(x,y)=>peData[y]?.[x],
   getCanvasSize:()=>({w:peGridSize,h:peGridSize,zoom:pePixelSize}),
   getTool:()=>peTool,
   getBrushSize:()=>peBrushSize,
-  getSpray:()=>({density:peSprayDensity,radius:peSprayRadius})
+  getSpray:()=>({density:peSprayDensity,radius:peSprayRadius}),
+  getBlendModes:()=>BLEND_MODES,
+  setActiveLayer:(i)=>{if(i>=0&&i<peLayers.length){peActiveLayer=i;peRenderLayerPanel();}}
 };
-console.log('Pixel Studio v0.3.0 loaded. Use window.__debug for verification.');
+console.log('Pixel Studio v0.5.0 loaded. Layers enabled. Use window.__debug for verification.');

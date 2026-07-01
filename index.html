@@ -57,6 +57,32 @@ body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,sans-
 .pe-row input[type=range]{flex:1;accent-color:var(--accent);height:4px}
 .pe-row .val{font-size:11px;color:#ccc;min-width:24px;text-align:right}
 .pe-row .val-wide{min-width:44px}
+.pe-layer-section{border-top:1px solid var(--border);padding-top:6px;margin-top:4px}
+.pe-layer-header{display:flex;align-items:center;gap:4px;margin-bottom:4px}
+.pe-layer-header h3{flex:1;margin:0}
+.pe-layer-header button{width:22px;height:22px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:3px;background:transparent;color:var(--fg2);cursor:pointer;font-size:14px;font-weight:600;line-height:1;transition:all .1s}
+.pe-layer-header button:hover{background:var(--accent);color:#111;border-color:var(--accent)}
+.pe-layer-list{display:flex;flex-direction:column;gap:2px;max-height:180px;overflow-y:auto}
+.pe-layer-item{display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:4px;background:var(--bg3);border:1px solid transparent;cursor:pointer;transition:all .1s;position:relative}
+.pe-layer-item:hover{border-color:var(--border)}
+.pe-layer-item.active{border-color:var(--accent);background:rgba(79,195,247,.08)}
+.pe-layer-item.dragging{opacity:.5}
+.pe-layer-item.drag-over{border-color:var(--accent);border-style:dashed}
+.pe-layer-thumb{width:36px;height:36px;border-radius:2px;border:1px solid #333;flex-shrink:0;image-rendering:pixelated}
+.pe-layer-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.pe-layer-name{font-size:10px;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pe-layer-op-row{display:flex;align-items:center;gap:4px}
+.pe-layer-op-row input[type=range]{flex:1;accent-color:var(--accent);height:3px;min-width:30px}
+.pe-layer-op-row .ol{font-size:8px;color:var(--fg3);min-width:24px;text-align:right}
+.pe-layer-btns{display:flex;gap:1px;flex-shrink:0}
+.pe-layer-btns button{width:20px;height:20px;display:flex;align-items:center;justify-content:center;border:none;border-radius:2px;background:transparent;color:var(--fg3);cursor:pointer;font-size:10px;transition:all .1s;padding:0}
+.pe-layer-btns button:hover{color:var(--fg);background:rgba(255,255,255,.05)}
+.pe-layer-btns button.on{color:var(--accent)}
+.pe-layer-actions{display:flex;gap:4px;margin-top:4px;flex-wrap:wrap}
+.pe-layer-actions select{flex:1;min-width:0;padding:2px 4px;font-size:10px;background:#222;border:1px solid #333;color:var(--fg2);border-radius:3px;outline:none;cursor:pointer}
+.pe-layer-actions select:focus{border-color:var(--accent)}
+.pe-layer-actions .la-btn{padding:2px 8px;font-size:9px;border:1px solid var(--border);border-radius:3px;background:transparent;color:var(--fg2);cursor:pointer;transition:all .1s;text-transform:uppercase}
+.pe-layer-actions .la-btn:hover{background:var(--border);color:var(--accent)}
 .pe-spray-row{display:none;align-items:center;gap:6px}
 .pe-spray-row.show{display:flex}
 .pe-spray-row label{font-size:10px;color:var(--fg2);white-space:nowrap}
@@ -229,8 +255,50 @@ body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,sans-
         <div class="pe-row"><label>Size</label><input type="range" id="peGridSize" min="8" max="128" value="16" step="1"><span class="val" id="peGridSizeVal">16</span></div>
         <div class="pe-row"><label>Zoom</label><input type="range" id="peZoom" min="4" max="64" value="24" step="1"><span class="val val-wide" id="peZoomVal">24x</span></div>
       </div>
-      <div class="pe-spray-row" id="sprayDensityRow"><label>Density</label><input type="range" id="sprayDensity" min="1" max="20" value="8" step="1"><span class="val" id="sprayDensityVal">8</span></div>
-      <div class="pe-spray-row" id="sprayRadiusRow"><label>Radius</label><input type="range" id="sprayRadius" min="1" max="10" value="4" step="1"><span class="val" id="sprayRadiusVal">4</span></div>
+           <div class="pe-layer-section">
+        <div class="pe-layer-header">
+          <h3>Layers</h3>
+          <button id="layerAdd" title="Add Layer">+</button>
+          <button id="layerDel" title="Delete Layer">−</button>
+        </div>
+        <div class="pe-layer-list" id="layerList"></div>
+        <div class="pe-layer-actions">
+          <select id="layerBlendMode">
+            <option value="normal">Normal</option>
+            <option value="multiply">Multiply</option>
+            <option value="screen">Screen</option>
+            <option value="overlay">Overlay</option>
+            <option value="darken">Darken</option>
+            <option value="lighten">Lighten</option>
+            <option value="difference">Difference</option>
+          </select>
+          <button class="la-btn" id="layerDup">Dup</button>
+          <button class="la-btn" id="layerMerge">Merge</button>
+        </div>
+      </div>
+ <div class="pe-spray-row" id="sprayDensityRow"><label>Density</label><input type="range" id="sprayDensity" min="1" max="20" value="8" step="1"><span class="val" id="sprayDensityVal">8</span></div>
+           <div class="pe-layer-section">
+        <div class="pe-layer-header">
+          <h3>Layers</h3>
+          <button id="layerAdd" title="Add Layer">+</button>
+          <button id="layerDel" title="Delete Layer">−</button>
+        </div>
+        <div class="pe-layer-list" id="layerList"></div>
+        <div class="pe-layer-actions">
+          <select id="layerBlendMode">
+            <option value="normal">Normal</option>
+            <option value="multiply">Multiply</option>
+            <option value="screen">Screen</option>
+            <option value="overlay">Overlay</option>
+            <option value="darken">Darken</option>
+            <option value="lighten">Lighten</option>
+            <option value="difference">Difference</option>
+          </select>
+          <button class="la-btn" id="layerDup">Dup</button>
+          <button class="la-btn" id="layerMerge">Merge</button>
+        </div>
+      </div>
+ <div class="pe-spray-row" id="sprayRadiusRow"><label>Radius</label><input type="range" id="sprayRadius" min="1" max="10" value="4" step="1"><span class="val" id="sprayRadiusVal">4</span></div>
       <div class="pe-info"><span id="peCursor">Click to paint - Drag to draw</span></div>
     </div>
   </div>
@@ -338,3 +406,4 @@ body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,sans-
 <div class="toast-container" id="toastContainer"></div>
 </body>
 <script src="app.js"></script></html>
+
