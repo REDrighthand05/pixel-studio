@@ -168,10 +168,11 @@ function peRender() {
     }
   }
   peUpdateSelectionOverlay();
+  peRenderOnion(peCtx);
 }
 
 function peSaveState() {
-  const s = peLayers.map(l => ({...l, data: l.data.map(r=>[...r])}));
+  const s = { frameIdx: peCurrentFrame, layers: peLayers.map(l => ({...l, data: l.data.map(r=>[...r])})) };
   peHistory = peHistory.slice(0, peHistoryIdx + 1);
   peHistory.push(s);
   if (peHistory.length > PE_MAX_HISTORY) peHistory.shift();
