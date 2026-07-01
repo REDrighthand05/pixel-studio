@@ -1,4 +1,4 @@
-// === Shared App State ===
+﻿// === Shared App State ===
 const AppState = {
   currentColor: '#4fc3f7', sharedPalette: null, activeView: 'pixel'
 };
@@ -45,6 +45,8 @@ let peSelecting = false, peSelStartX = 0, peSelStartY = 0;
 let peClipboard = null;
 let pePanning = false, pePanStartX = 0, pePanStartY = 0, pePanCX = 0, pePanCY = 0;
 let peSprayDensity = 8, peSprayRadius = 4;
+let peSymmetry = false;
+let peSymmetryMode = 'vertical';
 // Layer system
 let peLayers = [], peActiveLayer = 0;
 let peFrames = [];
@@ -187,6 +189,17 @@ function peRestorePreview() {
 function peSet(x, y, c) {
   if (!peLayers[peActiveLayer] || peLayers[peActiveLayer].locked) return;
   if (x>=0&&x<peGridSize&&y>=0&&y<peGridSize) peLayers[peActiveLayer].data[y][x]=c;
+  if (peSymmetry) peMirror(x, y, c);
+}
+function peSetRaw(x, y, c) {
+  if (x>=0&&x<peGridSize&&y>=0&&y<peGridSize) peLayers[peActiveLayer].data[y][x]=c;
+}
+function peMirror(x, y, c) {
+  var mx = peGridSize - 1, my = peGridSize - 1;
+  var mode = peSymmetryMode;
+  if (mode === 'vertical' || mode === 'both') peSetRaw(mx - x, y, c);
+  if (mode === 'horizontal' || mode === 'both') peSetRaw(x, my - y, c);
+  if (mode === 'radial') { peSetRaw(my - y, x, c); peSetRaw(mx - x, my - y, c); peSetRaw(y, mx - x, c); }
 }
 function peSetBrush(x, y, c) {
   const bs = peBrushSize, half = Math.floor(bs / 2);
@@ -492,10 +505,10 @@ function peRenderLayerPanel() {
     info.append(name, opRow);
     // Buttons
     const btns = document.createElement('div'); btns.className = 'pe-layer-btns';
-    const visBtn = document.createElement('button'); visBtn.textContent = l.visible ? '👁' : '○';
+    const visBtn = document.createElement('button'); visBtn.textContent = l.visible ? '馃憗' : '鈼?;
     visBtn.className = l.visible ? 'on' : ''; visBtn.title = 'Toggle visibility';
     visBtn.addEventListener('click', e => { e.stopPropagation(); peLayers[i].visible = !peLayers[i].visible; peRender(); peRenderLayerPanel(); });
-    const lockBtn = document.createElement('button'); lockBtn.textContent = l.locked ? '🔒' : '○';
+    const lockBtn = document.createElement('button'); lockBtn.textContent = l.locked ? '馃敀' : '鈼?;
     lockBtn.className = l.locked ? 'on' : ''; lockBtn.title = 'Toggle lock';
     lockBtn.addEventListener('click', e => { e.stopPropagation(); peLayers[i].locked = !peLayers[i].locked; peRenderLayerPanel(); });
     btns.append(visBtn, lockBtn);
@@ -568,6 +581,14 @@ document.getElementById('tlSheet')?.addEventListener('click',peExportSpriteSheet
 document.getElementById('onionToggle')?.addEventListener('change',function(){peOnionEnabled=this.checked;peRender();});
 document.getElementById('onionPrev')?.addEventListener('input',function(){peOnionPrevAlpha=parseInt(this.value)/100;if(peOnionEnabled)peRender();});
 document.getElementById('onionNext')?.addEventListener('input',function(){peOnionNextAlpha=parseInt(this.value)/100;if(peOnionEnabled)peRender();});
+// === Symmetry Events ===
+document.getElementById('peSymmetryToggle')?.addEventListener('change', function() {
+  peSymmetry = this.checked;
+  document.getElementById('peSymmetryMode').disabled = !this.checked;
+});
+document.getElementById('peSymmetryMode')?.addEventListener('change', function() {
+  peSymmetryMode = this.value;
+});
 document.getElementById('layerBlendMode')?.addEventListener('change', function() {
   if (peLayers[peActiveLayer]) { peLayers[peActiveLayer].blendMode = this.value; peRender(); }
 });
@@ -793,10 +814,12 @@ window.__debug={
   getBrushSize:()=>peBrushSize,
   getFrames:()=>peFrames.map(function(f){return{name:f.name,delay:f.delay,layers:f.layers.length};}),getCurrentFrame:()=>peCurrentFrame,getFrameCount:()=>peFrames.length,isAnimPlaying:()=>peAnimPlaying,getOnion:()=>({enabled:peOnionEnabled,prevAlpha:peOnionPrevAlpha,nextAlpha:peOnionNextAlpha}),selectFrame:(i)=>peSelectFrame(i),addFrame:peAddFrame,deleteFrame:(i)=>peDeleteFrame(i),playAnim:pePlayAnim,stopAnim:peStopAnim,exportGIF:peExportGIF,exportSheet:peExportSpriteSheet,saveProject:peSaveProject,openProject:peOpenProject,newProject:peNewProject,
   getSpray:()=>({density:peSprayDensity,radius:peSprayRadius}),
+  getSymmetry:()=>({enabled:peSymmetry,mode:peSymmetryMode}),
   getBlendModes:()=>BLEND_MODES,
   setActiveLayer:(i)=>{if(i>=0&&i<peLayers.length){peActiveLayer=i;peRenderLayerPanel();}}
 };
 console.log('Pixel Studio v0.7.0 loaded. Layers enabled. Use window.__debug for verification.');
+
 
 
 

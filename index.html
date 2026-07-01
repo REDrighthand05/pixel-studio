@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -88,6 +88,9 @@ body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,sans-
 .pe-layer-actions select:focus{border-color:var(--accent)}
 .pe-layer-actions .la-btn{padding:2px 8px;font-size:9px;border:1px solid var(--border);border-radius:3px;background:transparent;color:var(--fg2);cursor:pointer;transition:all .1s;text-transform:uppercase}
 .pe-layer-actions .la-btn:hover{background:var(--border);color:var(--accent)}
+.pe-sym-section{border-top:1px solid var(--border);padding-top:6px;margin-top:4px}
+.pe-sym-section .pe-row input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px;cursor:pointer}.pe-sym-section{border-top:1px solid var(--border);padding-top:6px;margin-top:4px}
+.pe-sym-section .pe-row input[type=checkbox]{accent-color:var(--accent)}
 .pe-spray-row{display:none;align-items:center;gap:6px}
 .pe-spray-row.show{display:flex}
 .pe-spray-row label{font-size:10px;color:var(--fg2);white-space:nowrap}
@@ -312,6 +315,19 @@ body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,sans-
           <button class="la-btn" id="layerDup">Dup</button>
           <button class="la-btn" id="layerMerge">Merge</button>
         </div>
+            </div>
+      <div class="pe-sym-section">
+        <h3>Symmetry</h3>
+        <div class="pe-row">
+          <input type="checkbox" id="peSymmetryToggle">
+          <label style="flex:1;cursor:pointer">Enable</label>
+          <select id="peSymmetryMode" style="width:auto;padding:2px 4px;font-size:10px;background:#222;border:1px solid #333;color:#8899aa;border-radius:3px;outline:none">
+            <option value="vertical">V</option>
+            <option value="horizontal">H</option>
+            <option value="both">V+H</option>
+            <option value="radial">Rad</option>
+          </select>
+        </div>
       </div>
  <div class="pe-spray-row" id="sprayDensityRow"><label>Density</label><input type="range" id="sprayDensity" min="1" max="20" value="8" step="1"><span class="val" id="sprayDensityVal">8</span></div>
            <div class="pe-layer-section">
@@ -333,6 +349,19 @@ body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,sans-
           </select>
           <button class="la-btn" id="layerDup">Dup</button>
           <button class="la-btn" id="layerMerge">Merge</button>
+        </div>
+            </div>
+      <div class="pe-sym-section">
+        <h3>Symmetry</h3>
+        <div class="pe-row">
+          <input type="checkbox" id="peSymmetryToggle">
+          <label style="flex:1;cursor:pointer">Enable</label>
+          <select id="peSymmetryMode" style="width:auto;padding:2px 4px;font-size:10px;background:#222;border:1px solid #333;color:#8899aa;border-radius:3px;outline:none">
+            <option value="vertical">V</option>
+            <option value="horizontal">H</option>
+            <option value="both">V+H</option>
+            <option value="radial">Rad</option>
+          </select>
         </div>
       </div>
  <div class="pe-spray-row" id="sprayRadiusRow"><label>Radius</label><input type="range" id="sprayRadius" min="1" max="10" value="4" step="1"><span class="val" id="sprayRadiusVal">4</span></div>
@@ -475,6 +504,7 @@ body{background:var(--bg);color:var(--fg);font-family:'Segoe UI',system-ui,sans-
 <input type="file" id="peFileInput" accept=".pxs" style="display:none">
 </body>
 <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>`r`n<script src="app.js"></script></html>
+
 
 
 
