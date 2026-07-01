@@ -87,4 +87,67 @@ const PixelStudioPlugin = {
 };
 
 window.PixelStudioPlugin = PixelStudioPlugin;
-console.log("Plugin system loaded");
+
+// Plugin marketplace
+PixelStudioPlugin._discover = function() {
+    var list = document.getElementById('pluginList');
+    if (!list) return;
+    list.innerHTML = '<div style="font-size:11px;color:var(--fg3);padding:8px">Loading...</div>';
+    fetch('plugins/index.json')
+        .then(function(r) { return r.json(); })
+        .then(function(plugins) {
+            list.innerHTML = '';
+            if (!plugins || plugins.length === 0) {
+                list.innerHTML = '<div style="font-size:11px;color:var(--fg3);padding:8px">No plugins available</div>';
+                return;
+            }
+            plugins.forEach(function(p) {
+                var item = document.createElement('div');
+                item.className = 'pv-saved-item';
+                var info = document.createElement('div');
+                info.style.cssText = 'flex:1;display:flex;flex-direction:column;gap:2px';
+                info.innerHTML = '<span style="font-size:11px;font-weight:500">' + p.name + ' <span style="color:var(--fg3);font-weight:400">v' + p.version + '</span></span><span style="font-size:10px;color:var(--fg3)">' + p.description + '</span>';
+                var installBtn = document.createElement('button');
+                installBtn.textContent = 'Install';
+                installBtn.style.cssText = 'padding:3px 10px;border:none;border-radius:3px;background:var(--accent);color:#111;font-size:10px;cursor:pointer';
+                installBtn.addEventListener('click', function() {
+                    var script = document.createElement('script');
+                    script.src = p.url;
+                    script.onload = function() {
+                        showToast('Installed: ' + p.name);
+                        PixelStudioPlugin._showInstalled();
+                    };
+                    script.onerror = function() {
+                        showToast('Failed: ' + p.name);
+                    };
+                    document.body.appendChild(script);
+                    installBtn.textContent = '...';
+                    installBtn.disabled = true;
+                });
+                item.append(info, installBtn);
+                list.appendChild(item);
+            });
+        })
+        .catch(function() {
+            list.innerHTML = '<div style="font-size:11px;color:var(--fg3);padding:8px">Failed to load marketplace</div>';
+        });
+};
+
+PixelStudioPlugin._showInstalled = function() {
+    var list = document.getElementById('pluginList');
+    if (!list) return;
+    var plugins = this.list();
+    list.innerHTML = '';
+    if (plugins.length === 0) {
+        list.innerHTML = '<div style="font-size:11px;color:var(--fg3);padding:8px">No plugins loaded. Go to Discover to browse.</div>';
+    } else {
+        plugins.forEach(function(p) {
+            var item = document.createElement('div');
+            item.className = 'pv-saved-item';
+            item.innerHTML = '<span style="flex:1;font-size:11px">' + p.name + ' <span style="color:var(--fg3)">v' + p.version + '</span></span><span style="font-size:10px;color:var(--fg3)">tools:' + p.tools + ' filters:' + p.filters + '</span>';
+            list.appendChild(item);
+        });
+    }
+};
+console.log('Plugin system loaded');
+
